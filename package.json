@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-channel-dingtalk",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "description": "DeepSeek Harness 的钉钉 Channel 插件。把钉钉官方 OpenClaw Connector 剥离 OpenClaw 依赖、重写为 DSH 原生插件。",
   "type": "module",
   "main": "./dist/apply.js",
@@ -26,7 +26,8 @@
     "type-check": "tsc --noEmit",
     "type-check:client": "tsc -p tsconfig.client.json --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "lint:typert": "node --import tsx scripts/lint-typert.ts"
   },
   "keywords": [
     "dsh",
@@ -60,10 +61,12 @@
     "@deepseek-ai/dsh-agent": ">=0.1.0-rc.6",
     "@deepseek-ai/dsh-session": ">=0.1.0-rc.6",
     "@deepseek-ai/dsh-jobs-local": ">=0.1.0-rc.6",
+    "@deepseek-ai/dsh-typert-protocol": ">=0.1.0-rc.6",
     "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-credentials": { "optional": true }
+    "@deepseek-ai/dsh-credentials": { "optional": true },
+    "@deepseek-ai/dsh-typert-protocol": { "optional": true }
   },
   "dependencies": {
     "axios": "1.14.0",
@@ -87,6 +90,7 @@
     "happy-dom": "^15.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.9"
   }

@@ -30,8 +30,10 @@ import { resolveCredentials, registerCredentials, registerSettings } from './run
 import { registerTools } from './tools/index.js'
 import { startDingtalkStreamBridges } from './runtime/stream.js'
 import { registerJobsController } from './runtime/jobs-controller.js'
-import { checkConfigStatus } from './typert/index.js'
+import { checkConfigStatus, lintTypert } from './typert/index.js'
 import { LOCALES_FOR_REGISTER } from './typert/locale/index.js'
+import { registerConfigStatusService } from './typert/reflect.js'
+import { TOP_LEVEL_SCHEMA_FIELDS } from './typert/schema-fields.js'
 
 export const CHANNEL_ID = 'dingtalk-connector' as const
 export const PLUGIN_NAME = '@local/dsh-channel-dingtalk'
@@ -72,6 +74,38 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
     log.warn('failed to compute config status', err)
   }
 
+  // 2.7 PR-6c: 注册 ConfigStatusService 为 Typert Remote service
+  //         让浏览器端可以通过 ctx.remote.configStatus.check(config) 调用
+  //         替代"把整个 settings 文档传过去"的做法
+  let disposeConfigStatus: (() => void) | null = null
+  try {
+    disposeConfigStatus = registerConfigStatusService(ctx)
+    log.debug('registered ConfigStatusService as Typert Remote')
+  } catch (err) {
+    log.warn('failed to register ConfigStatusService', err)
+  }
+
+  // 2.8 PR-6c: 启动时跑 typert lint（manifest + schema + locale）
+  //         failures 不阻断启动（设置 UI 仍可用），但记 log
+  try {
+    const lintResult = lintTypert(TOP_LEVEL_SCHEMA_FIELDS)
+    if (!lintResult.ok) {
+      log.warn('typert lint has issues', {
+        manifestErrors: lintResult.manifest.errors.length,
+        schemaUncovered: lintResult.schemaCover.uncovered.length,
+        schemaOrphan: lintResult.schemaCover.orphan.length,
+        localeCoverage: lintResult.localeDrift.coverageByLocale,
+      })
+    } else {
+      log.debug('typert lint passed', {
+        sections: lintResult.manifest.stats.sectionCount,
+        locales: lintResult.manifest.stats.localeCount,
+      })
+    }
+  } catch (err) {
+    log.warn('failed to run typert lint', err)
+  }
+
   // 3. tools：把钉钉能力封装成 DSH 可调用工具
   if (!config.toolsOnly) {
     registerTools(ctx, config)
@@ -101,6 +135,11 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
       stopBridge?.()
     } catch (err) {
       log.error('error stopping stream bridge', err)
+    }
+    try {
+      disposeConfigStatus?.()
+    } catch (err) {
+      log.error('error disposing ConfigStatusService', err)
     }
   })
 

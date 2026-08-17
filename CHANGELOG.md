@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.0] — 2026-08-17 (PR-6c: Typert reflection + Remote service + lint)
+
+### Added
+- **Typert Remote service** — `ConfigStatusService` exposes 4 `@Remote` methods
+  to the DSH Gateway. Browser clients can call them via `ctx.remote`:
+  - `check(config)` → `ConfigStatus` (banner info)
+  - `validate(config)` → `{ ok: true } | { ok: false, errors: [...] }`
+  - `listAccounts(config)` → `string[]`
+  - `summary(config)` → `{ ok, enabledCount, message }`
+- **`dsh-typert-protocol` integration** — Uses `@Remote` decorator,
+  `TypertRemoteService` base class, and `remoteMethods()` introspection.
+  No codegen needed; runtime decorators carry the metadata.
+- **Hand-written `TYPERT_HOST_ARTIFACT`** — Mirror of the shape that
+  `@deepseek-ai/dsh-typert-generator` emits (4 invocations, schema refs,
+  `model.services/events/objects`). Generated artifacts swap-in ready.
+- **`src/typert/loader-contract.ts`** — End-to-end validation that mirrors
+  what `dsh-typert-loader` does:
+  - `validateTYPERTManifest()` — required / recommended fields
+  - `detectSchemaCoverDrift(schemaFields)` — sections ↔ schema ↔ drift
+  - `detectLocaleDrift()` — per-locale coverage + missing-from-base
+  - `lintTypert(schemaFields)` — one-stop combined lint
+- **`src/typert/schema-fields.ts`** — `TOP_LEVEL_SCHEMA_FIELDS` constant
+  (23 fields) shared between tests and `scripts/lint-typert.ts`.
+- **`scripts/lint-typert.ts`** — CLI runner that exits 0 on pass, 1 on
+  errors, 2 on setup problems. Wire to `pnpm lint:typert`.
+- **11 new tests** in `tests/typert-pr6c.test.ts`:
+  - validateTYPERTManifest: passes on current / stats / warnings
+  - detectSchemaCoverDrift: coverage / orphan / detect
+  - detectLocaleDrift: zh base / en ≥ 90% / ja partial / missing-from-other
+  - lintTypert: one-stop / with errors
+  - ConfigStatusService: 4 methods exposed / direct invocation /
+    check / validate ok / validate invalid / listAccounts / summary /
+    typertRemote binding
+  - TYPERT_HOST_ARTIFACT: shape / refs / count
+  - Integration: checkConfigStatus === ConfigStatusService.check
+
+### Updated
+- `apply.ts`:
+  - calls `registerConfigStatusService(ctx)` (line 2.7)
+  - calls `lintTypert(TOP_LEVEL_SCHEMA_FIELDS)` at boot (line 2.8)
+  - disposes `ConfigStatusService` on fiber unload
+- `src/typert/index.ts`: re-exports `validateTYPERTManifest`,
+  `detectSchemaCoverDrift`, `detectLocaleDrift`, `lintTypert`,
+  `ConfigStatusService`, `registerConfigStatusService`, `TYPERT_HOST_ARTIFACT`
+- `package.json`:
+  - Version: 0.7.0 → **0.8.0**
+  - `peerDependencies` adds `@deepseek-ai/dsh-typert-protocol` (optional)
+  - `scripts` adds `lint:typert`
+  - `devDependencies` adds `tsx`
+
+### Known Limitations / Deferred
+- **Real codegen still deferred** — `@deepseek-ai/dsh-typert-generator@0.0.1-rc.1`
+  exists on npm but requires `typescript ^6.0.3` (we ship 5.6) and is still
+  pre-release. PR-6c hand-writes the artifact shape; when the generator
+  stabilizes on our dep version, swap `TYPERT_HOST_ARTIFACT` for
+  `await generator.generate(...)` in a build script.
+- **Schema reflection is shallow** — `remoteMethods` returns only method
+  names + invocation markers. zod schema → JSON Schema conversion is
+  the generator's job (not done here); the artifact references schema
+  names as strings.
+
+### Security
+- No new attack surface; `ConfigStatusService` methods are pure
+  (no I/O, no state); they only read from the calling client's config.
+
+## [0.7.0] — 2026-08-17 (PR-6b: Multi-language locale registry)
+
+### Added
+- Refactored flat `LOCALE` constant into per-language files
+  (`src/typert/locale/{zh,en,ja}.ts`)
+- `LOCALES_FOR_REGISTER` matches `dsh-client-locale` bulk-register contract
+  - locale IDs are `'zh'` / `'en'` / `'ja'` (base subtag), NOT `'zh-CN'`
+- `lookupLocale(active, key, params)` matches DSH server-side fallback chain
+  (active → zh fallback → key)
+- `LocaleKey` union type for compile-time key coverage
+- `findLocaleDivergence()` CI helper
+- `registerAllLocales(ctx)` in apply.ts: bulk register + per-locale fallback
+- Client-side `resolveT(active, key, params)` mirrors lookup chain
+- ZH_FALLBACK: 10 critical keys for browser fallback
+- `ja` partial scaffold (10 keys) demonstrates fallback chain
+- Backward-compat: `LOCALE['zh-CN']` still aliases zh (PR-5 tests pass)
+- 24 tests in `tests/locale.test.ts`
+
 ## [0.6.0] — 2026-08-17 (PR-6a: Multi-account React components)
 
 ### Added
