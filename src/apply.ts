@@ -30,6 +30,7 @@ import { resolveCredentials, registerCredentials, registerSettings } from './run
 import { registerTools } from './tools/index.js'
 import { startDingtalkStreamBridges } from './runtime/stream.js'
 import { registerJobsController } from './runtime/jobs-controller.js'
+import { LOCALE, checkConfigStatus } from './typert/index.js'
 
 export const CHANNEL_ID = 'dingtalk-connector' as const
 export const PLUGIN_NAME = '@local/dsh-channel-dingtalk'
@@ -50,13 +51,25 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
     return
   }
 
-  log.info(`applying ${PLUGIN_NAME} v0.1.0`)
+  log.info(`applying ${PLUGIN_NAME} v0.5.0`)
 
   // 1. settings namespace
   registerSettings(ctx)
 
   // 2. credentials 引用（可选 service）
   registerCredentials(ctx)
+
+  // 2.5 PR-5: 把 locale 字典推到 ctx.locale（DSH locale plugin）
+  //         schema 自动渲染表单，但 schema 的字段名要用 locale 文案展示
+  registerLocale(ctx)
+
+  // 2.6 PR-5: 把 config status 计算结果推给 settings UI 顶部 banner
+  try {
+    const status = checkConfigStatus(config)
+    log.info('config status', { ok: status.ok, enabledCount: status.enabledCount, warnings: status.warnings })
+  } catch (err) {
+    log.warn('failed to compute config status', err)
+  }
 
   // 3. tools：把钉钉能力封装成 DSH 可调用工具
   if (!config.toolsOnly) {
@@ -95,6 +108,35 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
     id: CHANNEL_ID,
     name: PLUGIN_NAME,
     config,
-    version: '0.1.0',
+    version: '0.5.0',
+    /** PR-5: typert manifest 入口（dsh-typert-loader 已自动注册；这里冗余提供给 runtime 上下文查询）*/
+    typertVersion: '0.5.0',
+    localeKeys: Object.keys(LOCALE['zh-CN']),
   } as const
+}
+
+/**
+ * PR-5: 把 channel-dingtalk locale 字典推到 ctx.locale.
+ * DSH locale plugin 会合并到全局 locale store.
+ */
+function registerLocale(ctx: Context): void {
+  const locale = ctx['locale'] as
+    | {
+        register?: (namespace: string, dict: Record<string, string>) => unknown
+      }
+    | undefined
+
+  if (!locale?.register) {
+    log.debug('ctx.locale not available; channel-dingtalk locale will not be registered')
+    return
+  }
+
+  try {
+    locale.register('channel-dingtalk', LOCALE['zh-CN'])
+    // en 字典需要按 DSH locale 的多语言机制注册；这里先注册 zh-CN
+    // 完整多语言：PR-6 接入 dsh-locale-intl
+    log.debug('registered channel-dingtalk locale (zh-CN)')
+  } catch (err) {
+    log.warn('failed to register locale', err)
+  }
 }

@@ -1,50 +1,18 @@
 /**
- * Typert Manifest — DSH settings UI 面板声明
+ * Typert manifest 入口 — 被 dsh-typert-loader 自动 import.
  *
- * 由 @deepseek-ai/dsh-typert-loader 自动扫描 ./typert export。
- * 本文件声明 channel-dingtalk 在 Web 设置面板里需要的卡片、locale 字典、
- * 占位符。
+ * Loader 在 Loader 启动时扫描每个 entry package 的 `./typert` export,
+ * 验证 TYPERT 常量，注册到 ctx.typert.registry。
  *
- * 当前是占位实现，下个 PR 会填充完整 Typert 描述符。
+ * 同时被 src/apply.ts 主动 import 用于：
+ *   - locale 字典推到 ctx.locale（DSH locale plugin）
+ *   - sections 元数据被 settings UI 引用
  */
 
-export const TYPERT = {
-  id: 'channel-dingtalk-settings',
-  version: '0.1.0',
-  // 卡片贡献：dsh-client-ui-settings-plugins 的 settings.plugin.item 槽位
-  contributions: {
-    'settings.plugin.item': {
-      order: 35,
-      label: { 'zh-CN': '钉钉 Channel', en: 'DingTalk Channel' },
-      description: {
-        'zh-CN': '把钉钉消息桥接到 DSH agent，支持 AI Card 流式回复。',
-        en: 'Bridge DingTalk messages to DSH agents, with AI Card streaming replies.',
-      },
-      // 实际渲染交给 settings-cards 插件（不在本仓库 scope）
-      renderSlot: 'channel-dingtalk.settings-card',
-    },
-  },
-  // locale 字典
-  locale: {
-    'zh-CN': {
-      'channel-dingtalk.title': '钉钉 Channel',
-      'channel-dingtalk.enabled': '启用',
-      'channel-dingtalk.dmPolicy': '私聊策略',
-      'channel-dingtalk.groupPolicy': '群聊策略',
-      'channel-dingtalk.inboxWakeup': '唤醒方式',
-      'channel-dingtalk.clientId': 'ClientID',
-      'channel-dingtalk.clientSecret': 'ClientSecret',
-    },
-    en: {
-      'channel-dingtalk.title': 'DingTalk Channel',
-      'channel-dingtalk.enabled': 'Enabled',
-      'channel-dingtalk.dmPolicy': 'DM policy',
-      'channel-dingtalk.groupPolicy': 'Group policy',
-      'channel-dingtalk.inboxWakeup': 'Inbox wakeup',
-      'channel-dingtalk.clientId': 'Client ID',
-      'channel-dingtalk.clientSecret': 'Client secret',
-    },
-  },
-} as const
+export { TYPERT } from './manifest.js'
+export { SECTIONS, getSection, findSectionForField, validateSectionCoverage, validateSectionFieldsExist, type SectionDef } from './sections.js'
+export { LOCALE, type LocaleKey } from './locale.js'
+export { checkConfigStatus, type ConfigStatus } from './validate.js'
 
+import { TYPERT } from './manifest.js'
 export default TYPERT

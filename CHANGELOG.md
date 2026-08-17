@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] — 2026-08-17 (PR-5)
+
+### Added
+- **DSH Typert settings UI 完整支持**
+  - **`src/typert/manifest.ts`** — TYPERT constant declaring plugin identity
+    (package `@local/dsh-channel-dingtalk`, face `host`) and contributions
+    to two settings UI slots:
+    - `settings.plugins.tab` — adds "DingTalk Channel" tab to settings page
+    - `settings.plugin.item` — adds a card to the plugin configuration tab
+    - Both with bilingual labels (`zh-CN` / `en`) and `order: 35`
+  - **`src/typert/locale.ts`** — full bilingual locale dictionary
+    - **80+ keys** covering every schema field (credentials, policies,
+      accounts, bindings, bridge, limits, routes, status, help)
+    - `options.<enum>` keys for enum-typed fields (dmPolicy, groupPolicy,
+      inboxWakeup) so settings UI renders localized radio/select labels
+    - `description` keys for tooltip / help text
+    - Status banners (`status.notConfigured`, `status.partialConfig`,
+      `status.bindingsMissing`, `status.allGood`, `status.accountsCount`)
+  - **`src/typert/sections.ts`** — 9 logical sections for the settings card:
+    1. credentials
+    2. basic (enabled / defaultAccount / systemPrompt / enableMediaUpload)
+    3. dmPolicy (private chat)
+    4. groupPolicy (group chat) — with `groups` per-conversation override
+    5. **accounts** (multi-bot) — marked `customWidget: 'accounts-list'`
+    6. **bindings** — marked `customWidget: 'bindings-list'`
+    7. routes (top-level)
+    8. bridge (inboxWakeup / timeouts)
+    9. limits (collapsed by default)
+    - `getSection(id)` / `findSectionForField(name)` / `validateSectionCoverage(allFields)` /
+      `validateSectionFieldsExist(allFields)` for runtime validation
+  - **`src/typert/validate.ts`** — `checkConfigStatus(config)` returns
+    `{ ok, enabledCount, missingAccountsInBindings, warnings, info }`
+    Used by the settings UI top banner to flag misconfiguration
+  - **`src/typert/index.ts`** — public entry: `TYPERT`, `LOCALE`, `SECTIONS`,
+    `checkConfigStatus`, all re-exported. Default export = `TYPERT`
+    (this is what `dsh-typert-loader` discovers via `./typert` export)
+- **`src/client.ts`** — Browser half entry (`./client`):
+  - `clientManifest` with `settings.sections` / `settings.locale` / `settings.status` /
+    `typert` contributions
+  - `onSettingsMount(ctx)` hook reserved for future custom React widgets
+  - Re-exports `TYPERT`, `SECTIONS`, `LOCALE` for direct browser use
+- **`registerLocale(ctx)`** in apply() — pushes zh-CN dictionary to `ctx.locale`
+  (DSH locale plugin); full multi-language support deferred to PR-6
+- **`ctx['channel-dingtalk']`** now includes `typertVersion` and `localeKeys`
+  metadata for runtime introspection
+
+### Changed
+- `package.json`:
+  - Version: 0.4.0 → **0.5.0**
+  - `exports` adds `"./typert"` → `./dist/typert/index.js`
+- `apply()`:
+  - Calls `registerLocale(ctx)` (best-effort: warns if `ctx.locale` unavailable)
+  - Calls `checkConfigStatus(config)` at boot to log health to operator
+  - Adds `typertVersion` / `localeKeys` to bridge context
+- Default-export TYPERT (= named TYPERT) for `dsh-typert-loader` discovery
+
+### Preserved from upstream
+- OpenClaw connector's `accounts` / `bindings` shape stays intact (no
+  schema migration needed for users coming from OpenClaw configs)
+- `validateBindings` semantics: warns but does not abort on missing accounts
+
+### Known Limitations (carried forward)
+- 6 remaining tools (doc/sheet/calendar/task/log/ding) still placeholder
+- en locale dictionary registered as fallback only; full i18n via dsh-locale-intl
+  deferred to PR-6
+- Browser half ships metadata only — DSH's automatic form renderer based on
+  schemastery schema is sufficient for ~80% of fields. Custom React widgets
+  for `accounts` (multi-account editor) / `bindings` (binding list editor)
+  deferred until users actually edit these interactively
+- No reconnect/retry beyond dingtalk-stream keepalive
+
+### Tests
+- **`tests/typert.test.ts`** (NEW): 24 cases
+  - **Manifest**: required fields, slot ids, bilingual labels, multi-account hints
+  - **Locale**: zh-CN + en present, all keys mirrored, options for enums
+  - **Sections**: 9 sections, sorted, unique ids, lookup helpers,
+    customWidget markers, accounts not collapsed
+  - **Section coverage**: all schema fields covered, no orphans, detection
+  - **checkConfigStatus**: notConfigured, ok single-account, enabledCount
+    multi-account, partial_config, bindings_missing, accounts_enabled info
+
 ## [0.4.0] — 2026-08-17 (PR-4)
 
 ### Added

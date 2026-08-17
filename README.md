@@ -159,6 +159,66 @@ export DINGTALK_CLIENT_ID=...
 export DINGTALK_CLIENT_SECRET=...
 ```
 
+### Web 设置面板（PR-5）
+
+`dsh-typert-loader` 自动扫描本仓库 `./typert` export 并注册到 `ctx.typert`，`dsh-client-ui-settings-plugins` 自动根据 schemastery schema 渲染表单。
+
+打开 DSH Web → **设置 → 插件 → DingTalk Channel**，可以看到 9 个分块配置：
+
+```
+┌─ 凭证 (Credentials) ────────────────────────┐
+│ Client ID     [_____________________________] │
+│ Client Secret [_____________________________] │
+└──────────────────────────────────────────────┘
+┌─ 基本 (Basic) ───────────────────────────────┐
+│ ☑ 启用                                       │
+│ 默认账号 ID  [default_______________________] │
+│ ☑ 启用媒体上传                                │
+│ 系统提示词    [_____________________________] │
+└──────────────────────────────────────────────┘
+┌─ 私聊策略 (DM Policy) ───────────────────────┐
+│ 私聊准入  ( ) 开放 (•) 配对 ( ) 白名单         │
+│ 白名单    [staffA, staffB__________________] │
+└──────────────────────────────────────────────┘
+┌─ 群聊策略 (Group Policy) ────────────────────┐
+│ 群聊准入  ( ) 开放 ( ) 白名单 (•) 禁用          │
+│ ☑ 群聊需 @ 机器人                             │
+│ 群特定配置  { cXXXX: { requireMention: ... }} │
+└──────────────────────────────────────────────┘
+┌─ 多账号 / 多机器人 (Multi-account) ──────────┐
+│ [+ 新增账号]                                  │
+│ ┌─ dev-bot ─────────────────────────────────┐ │
+│ │ 启用 ☑ 友好名 [开发机器人]                  │ │
+│ │ ChatbotUserId [$:LWCP_v1:$devbot456______] │ │
+│ │ [展开/折叠群聊/路由配置]                    │ │
+│ └──────────────────────────────────────────┘ │
+│ ┌─ prod-bot ─ ... ────────────────────────┐  │
+└──────────────────────────────────────────────┘
+┌─ Agent 绑定 (Bindings) ──────────────────────┐
+│ [+ 新增绑定]                                  │
+│ Agent ID [dev-agent] → Account ID [dev-bot]    │
+│ Agent ID [pm-agent]  → Account ID [pm-bot]     │
+└──────────────────────────────────────────────┘
+┌─ 会话路由 (Routes) ──────────────────────────┐
+│ [+ 新增路由]                                  │
+│ ConversationId [cProd1] → AgentScope [prod-agent] │
+└──────────────────────────────────────────────┘
+┌─ Bridge 行为 ────────────────────────────────┐
+│ 唤醒方式   ( ) followup (•) steer              │
+│ AI Card 复用窗口 [86400000] ms                │
+└──────────────────────────────────────────────┘
+┌─ 消息限制 ▾ ─────────────────────────────────┐
+│ 上下文历史 [50]  单消息字符 [4000]  媒体MB [20]│
+└──────────────────────────────────────────────┘
+```
+
+顶部 banner 自动显示配置健康度：
+
+- ✅ 配置正确
+- ⚠️ 未配置凭证
+- ⚠️ 部分账号未配置凭证: dev-bot, pm-bot
+- ⚠️ 以下 bindings 引用的账号不存在: ghost
+
 ---
 
 ## 开发路线
@@ -172,8 +232,8 @@ export DINGTALK_CLIENT_SECRET=...
 - [x] W4：**runtime/ai-card.ts 接入完整 apis/streamAICard + apis/finishAICard**（PR-3）
 - [x] W5：**多账号 / 多机器人 / bindings 完整支持**（PR-4）
 - [x] W5：**multi-stream bridge：每个 account 一个独立 DWClient**（PR-4）
-- [ ] W6：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
-- [ ] W7：typert 设置 UI + 文档
+- [x] W6：**DSH Typert settings UI（manifest + locale + sections + status）**（PR-5）
+- [ ] W7：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
 - [ ] W8-W9：稳定性、断线重连
 - [ ] W10：发布与生态接入
 
