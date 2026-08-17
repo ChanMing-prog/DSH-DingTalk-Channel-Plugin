@@ -59,6 +59,8 @@ DSH 既不提供 `openclaw` 包，也没有 channel 抽象。所以这个仓库�
 
 ## 安装指南
 
+> 📖 **完整安装文档**（含 cordis.patch.yml 配置详解、agent preset 加载方式、常见问题排查）：[docs/INSTALL.md](docs/INSTALL.md)
+
 ### 前置条件
 
 | 依赖 | 版本 | 用途 |
@@ -82,22 +84,14 @@ DSH 既不提供 `openclaw` 包，也没有 channel 抽象。所以这个仓库�
 > ```
 > 扫码后凭证会自动写入配置。拿到 `ClientID` / `ClientSecret` 后回到本指南继续。
 
-### 第 2 步：克隆并安装插件
+### 第 2 步：克隆并编译插件
 
 ```bash
-# 克隆仓库
-git clone git@github.com:ChanMing-prog/DSH-DingTalk-Channel-Plugin.git
-cd DSH-DingTalk-Channel-Plugin
+git clone git@github.com:ChanMing-prog/DSH-DingTalk-Channel-Plugin.git \
+  ~/DSH-DingTalk-Channel-Plugin
 
-# 安装依赖（推荐 pnpm，npm 也可）
-pnpm install
-# 或
-npm install
-
-# 编译 TypeScript → dist/
-pnpm build
-# 或
-npm run build
+cd ~/DSH-DingTalk-Channel-Plugin
+pnpm install && pnpm build
 ```
 
 编译成功后，`dist/` 目录下会出现：
@@ -110,111 +104,80 @@ npm run build
 
 ### 第 3 步：配置凭证
 
-**方式 A：环境变量（推荐）**
-
-```bash
-# 单账号
-export DINGTALK_CLIENT_ID='your-client-id-here'
-export DINGTALK_CLIENT_SECRET='your-client-secret-here'
-
-# 多账号（格式：DINGTALK_<ACCOUNT_ID>_CLIENT_ID/SECRET）
-export DINGTALK_PROD_BOT_CLIENT_ID='prod-client-id'
-export DINGTALK_PROD_BOT_CLIENT_SECRET='prod-client-secret'
-export DINGTALK_DEV_BOT_CLIENT_ID='dev-client-id'
-export DINGTALK_DEV_BOT_CLIENT_SECRET='dev-client-secret'
-```
-
-**方式 B：DSH settings 文件**（`~/.dsh/settings.yaml`）
+**方式 A：DSH settings 文件（推荐）**
 
 ```yaml
+# ~/.dsh/settings.yaml
 channel-dingtalk:
-  clientId: 'your-client-id-here'
-  clientSecret: 'your-client-secret-here'
+  clientId: 'dingxxxxxxxxxxxxxxxx'
+  clientSecret: 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
 ```
 
-**方式 C：Web 设置面板**（见第 5 步，GUI 填写）
+**方式 B：环境变量**（推荐放在 `~/.zshrc` / `~/.bashrc`）
 
-### 第 4 步：在 DSH host composition 中加载插件
+```bash
+export DINGTALK_CLIENT_ID='dingxxxxxxxxxxxxxxxx'
+export DINGTALK_CLIENT_SECRET='xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'
+```
 
-编辑 DSH 的主 composition 文件（通常是 `~/.dsh/cordis.yml` 或 `base.cordis.yml`），在末尾加一行：
+**方式 C：Web 设置面板**（第 5 步启动 DSH 后 GUI 填写）
+
+### 第 4 步：加载插件
+
+**方式 A（推荐）：编辑 `cordis.patch.yml`**
+
+编辑你使用的 profile 的 patch 文件：
+
+```bash
+vim ~/.dsh/profiles/web/cordis.patch.yml
+```
+
+在里面加一个 `- insert:` 条目：
 
 ```yaml
 # DSH DingTalk Channel Plugin
-- id: dingtalk-channel
-  name: '/absolute/path/to/DSH-DingTalk-Channel-Plugin'
-  config:
-    enabled: true
-    dmPolicy: 'pairing'        # 私聊：pairing（首次需要配对码）/ open / allowlist
-    groupPolicy: 'allowlist'   # 群聊：allowlist / open / disabled
-    requireMention: true       # 群聊必须 @机器人才响应
-    inboxWakeup: 'followup'    # followup（等当前 turn 完成）/ steer（插队）
+# 来源：https://github.com/ChanMing-prog/DSH-DingTalk-Channel-Plugin
+- insert:
+    - id: dingtalk-channel
+      name: '/Users/chenming/DSH-DingTalk-Channel-Plugin'
+      config:
+        enabled: true
+        dmPolicy: 'pairing'
+        groupPolicy: 'allowlist'
+        requireMention: true
+        inboxWakeup: 'followup'
+        streamTimeoutMs: 60000
 ```
 
-> ⚠️ `name` 字段必须是本仓库的**绝对路径**（不是 npm 包名），因为插件不在 npm registry 上。
+> ⚠️ `name` 字段必须是插件目录的**绝对路径**（不是 npm 包名），因为插件不在 npm registry 上。
+
+**方式 B：命令行临时加载**（只对本次启动生效）
+
+```bash
+dsh web --patch /Users/chenming/DSH-DingTalk-Channel-Plugin/cordis.yml
+```
 
 ### 第 5 步：启动 DSH 并验证
 
 ```bash
-# 启动 DSH（Web 模式）
 dsh web
-# 或
-npx @deepseek-ai/dsh web
 ```
 
-浏览器打开 DSH Web 界面，进入 **设置 → 插件 → DingTalk Channel**：
+浏览器打开 DSH Web 界面：
 
-1. **顶部 banner** 应显示 ✅ 或 ⚠️（健康度检查）
-2. 如果凭证未配置，填入 `ClientID` / `ClientSecret`
-3. 在**多账号**区域点击"新增账号"添加更多机器人
-4. 在**Agent 绑定**区域配置 `agentId → accountId` 映射
-5. 点击保存
+1. **设置 → 插件 → DingTalk Channel**：顶部 banner 应显示 ✅
+2. 如凭证未配置，在这里填入 `ClientID` / `ClientSecret`
 
-### 第 6 步：端到端验证
+**私聊验证**：在钉钉给机器人发消息，应收到 AI Card 流式回复。
+
+**群聊验证**：拉机器人进群，@机器人发消息，应收到 AI Card 流式回复。
+
+### 第 6 步（可选）：Typert lint 检查
 
 ```bash
-# 在钉钉里找到你创建的机器人，发送一条私聊消息：
-你好
-
-# 钉钉应收到 AI Card 流式回复（打字机效果）
-# DSH Web 界面应显示该 session 的对话历史
-```
-
-**群聊验证**：
-
-1. 把机器人拉入一个群
-2. @机器人 + 发送消息
-3. 钉钉群内应收到 AI Card 流式回复
-4. 不 @机器人时，机器人不应响应（如果 `requireMention: true`）
-
-**AI Card 验证**：
-- 首条消息：卡片显示"正在思考…" → 逐步显示推理文本 → 完成后卡片定格
-- 后续消息：同一会话复用卡片实例（`aiCardReuseMs: 86400000` 即 24h 内复用）
-
-**媒体发送验证**（agent 主动发送）：
-
-在 DSH session 里对 agent 说：
-```
-把这张图片发到钉钉群：/path/to/image.png
-```
-Agent 应调用 `dingtalk_send_media` 工具，上传图片并通过 `sampleImageMsg` 发送到目标会话。
-
-### 第 7 步（可选）：Typert lint 检查
-
-```bash
-# 检查 manifest + schema + locale 一致性
+cd ~/DSH-DingTalk-Channel-Plugin
 pnpm lint:typert
-
-# 期望输出：
-# 🩺 Typert Lint Report
-# ═══════════════════════
-# Manifest:  ✅ (0 errors, 0 warnings)
-# Sections:  9 (23 fields)
-# Locales:   3 (90 keys base)
-# Locale coverage:
-#   zh: 100.0%
-#   en: 100.0%
-#   ja: 11.1%
-# ✅ lint passed
+# 期望输出：✅ lint passed
 ```
 
 ---
