@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] — 2026-08-17 (PR-9: README installation guide)
+
+### Changed
+- `README.md`: replaced minimal "安装（开发者模式）" with a complete 7-step
+  installation guide covering:
+  1. Creating a DingTalk enterprise app (open platform)
+  2. Cloning and building the plugin (`pnpm install && pnpm build`)
+  3. Credential configuration (env vars / settings.yaml / Web UI)
+  4. Loading the plugin in DSH host composition (`cordis.yml`)
+  5. Starting DSH and verifying (single DM / group @mention / AI Card)
+  6. Media sending verification (agent calls `dingtalk_send_media`)
+  7. Typert lint check (`pnpm lint:typert`)
+- Added **Architecture** section with full `src/` directory tree
+- Added **Stability** section summarizing heartbeat / reconnect / dedup / token refresh
+- Added **Configuration Reference** section (single-account + multi-account YAML examples)
+- Added QR-code auth recommendation (upstream connector's `npx install`)
+- `package.json`: 1.0.0 → **1.0.1**
+
 ## [1.0.0] — 2026-08-17 (PR-8: Stability — heartbeat + reconnect + token scheduler)
 
 ### Added

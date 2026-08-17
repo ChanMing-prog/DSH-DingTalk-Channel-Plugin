@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-channel-dingtalk",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "DeepSeek Harness 的钉钉 Channel 插件。把钉钉官方 OpenClaw Connector 剥离 OpenClaw 依赖、重写为 DSH 原生插件。",
   "type": "module",
   "main": "./dist/apply.js",
