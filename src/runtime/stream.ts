@@ -58,6 +58,7 @@ export function startDingtalkStreamBridge(
     credentials: { ...credentials },
     handleCache: new Map(),
     cardCache: new Map(),
+    cardRealCache: new Map(),
     pairedStaffIds: new Set(),
   }
 

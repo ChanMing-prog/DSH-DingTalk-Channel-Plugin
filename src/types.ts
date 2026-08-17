@@ -123,6 +123,8 @@ export interface BridgeContext {
   handleCache: Map<string, import('@deepseek-ai/dsh-agent').AgentHandle>
   /** 同一 conversationId → 当前活跃 AI Card 实例的缓存 */
   cardCache: Map<string, AiCardInstance>
+  /** 同一 cardKey → 真实 apis/ AICardInstance（带 token/expire/inputing 字段）*/
+  cardRealCache?: Map<string, import('./apis/messaging.js').AICardInstance>
   /** 已配对的私聊用户（pairing 模式）*/
   pairedStaffIds: Set<string>
 }

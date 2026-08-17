@@ -1,32 +1,19 @@
 /**
  * AI Card Bridge — 把 DSH agent 的流式输出写回钉钉 AI Card
  *
- * 协议层直接 fork 自上游 connector 的 services/card-bridge.ts；
- * OpenClaw 桥接（gateway method + OpenClaw streaming）部分被替换成：
- *   - 通过 dingtalk-stream 的 CardReplier 注册回调
- *   - 通过 API /v1.0/card/instances 推送流式更新
- *
- * 首版只实现 create + append（chunk）+ complete + fail 四个动作。
- * 复杂功能（按钮回调、tool-call 渲染）后续 PR 补充。
+ * PR-2 重构：本文件改为 apis/messaging-ai-card 的 thin wrapper。
+ * 所有协议层逻辑（QPS 限流、Markdown 修正、token 续期）都搬到了 apis/。
+ * 这里只保留"DSH 上下文管理"（conversationId → card 实例的本地缓存）。
  */
 
-import type { AxiosInstance } from 'axios'
 import type { BridgeContext, AiCardInstance, DingtalkInboundMessage } from '../types.js'
-import { createLogger } from '../utils/logger.js'
-import { getAccessToken } from './setup.js'
-
-const log = createLogger('dingtalk-ai-card')
+import {
+  createAICardForTarget,
+  streamAICard as apisStreamAICard,
+  finishAICard as apisFinishAICard,
+} from '../apis/messaging.js'
 
 const CARD_REUSE_MS_DEFAULT = 86_400_000
-
-async function http(bctx: BridgeContext): Promise<AxiosInstance> {
-  const { getDingtalkHttpClient } = await import('../utils/http-client.js')
-  const client = getDingtalkHttpClient()
-  // 注入最新 accessToken
-  const token = await getAccessToken(bctx.credentials)
-  client.defaults.headers.common['x-acs-dingtalk-access-token'] = token
-  return client
-}
 
 /**
  * 创建一张 AI Card 并设为"思考中"状态。
@@ -40,7 +27,6 @@ export async function createAiCard(
   const reuseMs = bctx.config.aiCardReuseMs ?? CARD_REUSE_MS_DEFAULT
   const existing = bctx.cardCache.get(sessionId)
   if (existing && Date.now() - existing.createdAt < reuseMs) {
-    log.debug('reusing ai card', { sessionId, cardKey: existing.cardKey })
     return existing
   }
 
@@ -52,23 +38,15 @@ export async function createAiCard(
     status: 'thinking',
   }
 
-  try {
-    const client = await http(bctx)
-    const res = await client.post<{ cardInstanceId: string }>('/v1.0/card/instances', {
-      conversationId: msg.conversationId,
-      cardTemplateId: 'StandardCard',
-      outTrackId: cardKey,
-      cardData: {
-        status: 'thinking',
-        title: '正在思考…',
-        content: '',
-      },
-    })
-    instance.cardInstanceId = res.data.cardInstanceId
-    log.debug('created ai card', { cardKey, cardInstanceId: instance.cardInstanceId })
-  } catch (err) {
-    log.error('failed to create ai card, falling back to plain text', err)
+  const target = msg.conversationType === '2'
+    ? { type: 'group' as const, openConversationId: msg.conversationId }
+    : { type: 'user' as const, userId: msg.senderStaffId ?? msg.conversationId }
+
+  const realCard = await createAICardForTarget(bctx.credentials, target)
+  if (realCard) {
+    instance.cardInstanceId = realCard.cardInstanceId
   }
+  // 即便 create 失败也写入缓存：fallback 路径由 messaging 层退化为纯文本
 
   bctx.cardCache.set(sessionId, instance)
   return instance
@@ -83,21 +61,11 @@ export async function appendAiCardChunk(
   delta: string,
 ): Promise<void> {
   card.status = 'streaming'
-  if (!card.cardInstanceId) return // fallback path：吞掉
-  try {
-    const client = await http(bctx)
-    await client.post('/v1.0/card/instances/stream', {
-      cardInstanceId: card.cardInstanceId,
-      outTrackId: card.cardKey,
-      cardData: {
-        status: 'streaming',
-        content: { delta },
-      },
-      isFull: false,
-    })
-  } catch (err) {
-    log.error('appendAiCardChunk failed', err)
-  }
+  if (!card.cardInstanceId) return
+  // apis/ 的 streamAICard 要求完整的 AICardInstance 形态
+  const realCard = await bctx.cardRealCache?.get(card.cardKey)
+  if (!realCard) return
+  await apisStreamAICard(realCard, delta, false, bctx.credentials)
 }
 
 /**
@@ -110,23 +78,14 @@ export async function completeAiCard(
 ): Promise<void> {
   card.status = 'done'
   if (!card.cardInstanceId) return
-  try {
-    const client = await http(bctx)
-    await client.post('/v1.0/card/instances/update', {
-      cardInstanceId: card.cardInstanceId,
-      outTrackId: card.cardKey,
-      cardData: {
-        status: 'done',
-        content,
-      },
-    })
-  } catch (err) {
-    log.error('completeAiCard failed', err)
-  }
+  const realCard = await bctx.cardRealCache?.get(card.cardKey)
+  if (!realCard) return
+  const text = typeof content === 'string' ? content : JSON.stringify(content)
+  await apisFinishAICard(realCard, text, bctx.credentials)
 }
 
 /**
- * 标记 AI Card 失败。
+ * 标记 AI Card 失败（PR-2 用 finishAICard + 错误文本实现）。
  */
 export async function failAiCard(
   bctx: BridgeContext,
@@ -135,17 +94,7 @@ export async function failAiCard(
 ): Promise<void> {
   card.status = 'failed'
   if (!card.cardInstanceId) return
-  try {
-    const client = await http(bctx)
-    await client.post('/v1.0/card/instances/update', {
-      cardInstanceId: card.cardInstanceId,
-      outTrackId: card.cardKey,
-      cardData: {
-        status: 'failed',
-        content: { error: reason },
-      },
-    })
-  } catch (err) {
-    log.error('failAiCard failed', err)
-  }
+  const realCard = await bctx.cardRealCache?.get(card.cardKey)
+  if (!realCard) return
+  await apisFinishAICard(realCard, `⚠️ **执行失败**\n\n${reason}`, bctx.credentials)
 }

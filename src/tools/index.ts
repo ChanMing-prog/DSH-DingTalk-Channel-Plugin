@@ -21,6 +21,7 @@ import type { Context } from 'cordis'
 import type { DingtalkConfig } from '../../settings-schema.js'
 import { createLogger } from '../utils/logger.js'
 import { createSendTool } from './dingtalk_send.js'
+import { createSendMediaTool } from './dingtalk_send_media.js'
 import { createDocTool } from './dingtalk_doc.js'
 import { createSheetTool } from './dingtalk_sheet.js'
 import { createCalendarTool } from './dingtalk_calendar.js'
@@ -42,6 +43,7 @@ export function registerTools(ctx: Context, config: DingtalkConfig): void {
 
   const factories = [
     createSendTool,
+    createSendMediaTool,
     createDocTool,
     createSheetTool,
     createCalendarTool,

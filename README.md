@@ -13,16 +13,17 @@
 
 把钉钉的 7 类能力接入 DeepSeek Harness（DSH）：
 
-| 类别 | 能力 |
-|------|------|
-| 💬 **消息收发** | 私聊/群聊接收 + 自动回复，文本/Markdown，@成员 |
-| 🌊 **AI Card 流式** | 打字机效果，AI Card 中实时流式显示推理与回复 |
-| 📄 **钉钉文档** | 创建、追加、搜索、列举 |
-| 🔔 **DING 消息** | 强提醒推送 |
-| ✅ **待办任务** | 个人/群待办 CRUD |
-| 📊 **AI 表格** | 表格与行数据读写 |
-| 📅 **日历日程** | 日程管理、参会人、忙闲 |
-| 📝 **日志** | 日报/周报提交与查询 |
+| 类别 | 能力 | 状态 |
+|------|------|------|
+| 💬 **消息收发** | 私聊/群聊接收 + 自动回复，文本/Markdown，@成员 | ✅ PR-2 |
+| 🌊 **AI Card 流式** | 打字机效果，AI Card 中实时流式显示推理与回复 | ✅ PR-2（含 QPS 限流） |
+| 🖼️ **媒体上传** | 图片/视频/音频/文件上传 + 自动发送 | ✅ PR-2（image 完整，其他 PR-3） |
+| 📄 **钉钉文档** | 创建、追加、搜索、列举 | 🟡 占位 |
+| 🔔 **DING 消息** | 强提醒推送 | 🟡 占位 |
+| ✅ **待办任务** | 个人/群待办 CRUD | 🟡 占位 |
+| 📊 **AI 表格** | 表格与行数据读写 | 🟡 占位 |
+| 📅 **日历日程** | 日程管理、参会人、忙闲 | 🟡 占位 |
+| 📝 **日志** | 日报/周报提交与查询 | 🟡 占位 |
 
 并且提供 **完整 Channel Bridge**：
 
@@ -113,13 +114,12 @@ export DINGTALK_CLIENT_SECRET=...
 
 ## 开发路线
 
-- [ ] W1：fork connector 业务代码 + 剥离 OpenClaw 依赖
-- [ ] W2：`apply(ctx)` 主骨架 + settings/credentials
-- [ ] W2：7 个 DSH tool 封装
-- [ ] W3：AI Card 流式响应
-- [ ] W3：stream bridge 完整实现
-- [ ] W4：会话路由（钉钉 conversationId ↔ DSH sessionId）
-- [ ] W4：群/私聊策略（dmPolicy/groupPolicy/requireMention）
+- [x] W1：fork connector 业务代码 + 剥离 OpenClaw 依赖
+- [x] W2：`apply(ctx)` 主骨架 + settings/credentials
+- [x] W2：stream bridge + 会话路由 + 群/私聊策略
+- [x] W3：**AI Card 流式响应 + apis/messaging 完整协议层**（PR-2）
+- [x] W3：**媒体上传 + 图片后处理 + send_media 工具**（PR-2）
+- [ ] W4：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
 - [ ] W5：typert 设置 UI + 文档
 - [ ] W6-W7：稳定性、断线重连
 - [ ] W8：发布与生态接入

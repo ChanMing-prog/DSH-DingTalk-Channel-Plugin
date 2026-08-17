@@ -1,26 +1,41 @@
 /**
  * Tool: dingtalk_send
  *
- * 让 DSH agent 可以向指定钉钉 conversationId 发送消息。
- * 协议层复用 apis/messaging.sendTextToDingTalk（fork 自上游
- * services/messaging/index.ts）。
+ * 让 DSH agent 向指定钉钉 conversationId 发送文本 / Markdown / Image 消息。
+ * 协议层走 apis/messaging.sendToGroup / sendToUser（fork 自上游 connector）。
  *
- * 这是首版的最小占位实现：只支持纯文本/Markdown，发送目标取自
- * tool args 或当前 session 的 conversationId（source.kind === 'dingtalk'）。
+ * 目标约定：
+ *   - conversationType='1'（私聊）：conversationId 是 senderStaffId
+ *   - conversationType='2'（群）：   conversationId 是 openConversationId
+ *
+ * 高级选项：
+ *   - atStaffIds: @成员列表（视觉渲染为蓝色 @）
+ *   - msgType: text / markdown / image（image 时 text 字段承载 mediaId）
  */
 
 import type { Context } from 'cordis'
 import type { DingtalkConfig } from '../../settings-schema.js'
-import { getDingtalkHttpClient } from '../utils/http-client.js'
-import { getAccessToken } from '../runtime/setup.js'
 import { createLogger } from '../utils/logger.js'
+import { sendToGroup, sendToUser, type SendResult } from '../apis/messaging.js'
 
 const log = createLogger('dingtalk-tool-send')
 
-export function createSendTool(ctx: Context, config: DingtalkConfig) {
+function getCreds() {
+  const cid = process.env.DINGTALK_CLIENT_ID
+  const csec = process.env.DINGTALK_CLIENT_SECRET
+  if (!cid || !csec) {
+    throw new Error(
+      'dingtalk_send requires DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET env vars',
+    )
+  }
+  return { clientId: cid, clientSecret: csec }
+}
+
+export function createSendTool(_ctx: Context, _config: DingtalkConfig) {
   return {
     name: 'dingtalk_send',
-    description: '向指定钉钉会话发送文本或 Markdown 消息。可用于私聊或群聊。',
+    description:
+      '向指定钉钉会话发送文本/Markdown/图片消息。优先 AI Card 流式；失败降级普通消息。支持 @成员。',
     input: {
       schema: {
         type: 'object',
@@ -35,16 +50,28 @@ export function createSendTool(ctx: Context, config: DingtalkConfig) {
             description: "'1'=私聊, '2'=群",
             default: '2',
           },
-          text: { type: 'string', description: '消息文本（支持 Markdown）' },
+          text: {
+            type: 'string',
+            description: '消息内容。msgType=markdown 时支持 Markdown 语法；msgType=image 时传 media_id',
+          },
           msgType: {
             type: 'string',
-            enum: ['text', 'markdown'],
+            enum: ['text', 'markdown', 'image'],
             default: 'markdown',
           },
           atStaffIds: {
             type: 'array',
             items: { type: 'string' },
             description: '@的成员 staffId 列表',
+          },
+          atAll: {
+            type: 'boolean',
+            default: false,
+            description: '是否 @all',
+          },
+          title: {
+            type: 'string',
+            description: 'Markdown 标题（可选）',
           },
         },
         required: ['conversationId', 'text'],
@@ -58,7 +85,10 @@ export function createSendTool(ctx: Context, config: DingtalkConfig) {
         type: 'object',
         properties: {
           ok: { type: 'boolean' },
-          messageId: { type: 'string' },
+          usedAICard: { type: 'boolean' },
+          cardInstanceId: { type: 'string' },
+          processQueryKey: { type: 'string' },
+          error: { type: 'string' },
         },
         required: ['ok'],
       },
@@ -71,40 +101,26 @@ export function createSendTool(ctx: Context, config: DingtalkConfig) {
       conversationId: string
       conversationType: '1' | '2'
       text: string
-      msgType: 'text' | 'markdown'
+      msgType: 'text' | 'markdown' | 'image'
       atStaffIds?: string[]
-    }) {
-      const token = await getAccessToken({
-        clientId: process.env.DINGTALK_CLIENT_ID ?? '',
-        clientSecret: process.env.DINGTALK_CLIENT_SECRET ?? '',
-      })
-      const http = getDingtalkHttpClient()
+      atAll?: boolean
+      title?: string
+    }): Promise<SendResult> {
+      const creds = getCreds()
+      const opts = {
+        msgType: args.msgType,
+        title: args.title,
+        atUserIds: args.atStaffIds,
+        atAll: args.atAll,
+      }
       try {
-        const endpoint =
-          args.conversationType === '1'
-            ? '/v1.0/im/bot/messages/send_to_single_chat'
-            : '/v1.0/im/bot/messages/send'
-        const body =
-          args.conversationType === '1'
-            ? {
-                robotCode: process.env.DINGTALK_CLIENT_ID,
-                userIds: [args.conversationId],
-                msgKey: args.msgType === 'markdown' ? 'sampleMarkdown' : 'sampleText',
-                msgParam: JSON.stringify({ text: args.text, atStaffIds: args.atStaffIds ?? [] }),
-              }
-            : {
-                robotCode: process.env.DINGTALK_CLIENT_ID,
-                openConversationId: args.conversationId,
-                msgKey: args.msgType === 'markdown' ? 'sampleMarkdown' : 'sampleText',
-                msgParam: JSON.stringify({ text: args.text, atStaffIds: args.atStaffIds ?? [] }),
-              }
-        const res = await http.post<{ messageId: string }>(endpoint, body, {
-          headers: { 'x-acs-dingtalk-access-token': token },
-        })
-        return { ok: true, messageId: res.data.messageId }
+        if (args.conversationType === '1') {
+          return await sendToUser(creds, args.conversationId, args.text, opts)
+        }
+        return await sendToGroup(creds, args.conversationId, args.text, opts)
       } catch (err) {
         log.error('dingtalk_send failed', err)
-        return { ok: false, messageId: '' }
+        return { ok: false, error: (err as Error).message, usedAICard: false }
       }
     },
   }
