@@ -95,6 +95,9 @@ export default clientManifest
 
 // 类型导出
 export type { ChannelCardProps, DingTalkConfig, DingtalkDraft, ConfigStatus, Locale } from './types.js'
+export { resolveT } from './Field.js'
+export type { LocaleCode, LocaleEntry, LocaleKey } from '../typert/locale/index.js'
+export { LOCALES, LOCALES_FOR_REGISTER, lookupLocale, findLocaleDivergence } from '../typert/locale/index.js'
 
 // 组件直接 export（让 dsh-cordis-client-runner 等可以做 tree-shaking）
 export { ChannelCard, AccountsEditor, BindingsEditor, GroupsEditor }

@@ -30,7 +30,8 @@ import { resolveCredentials, registerCredentials, registerSettings } from './run
 import { registerTools } from './tools/index.js'
 import { startDingtalkStreamBridges } from './runtime/stream.js'
 import { registerJobsController } from './runtime/jobs-controller.js'
-import { LOCALE, checkConfigStatus } from './typert/index.js'
+import { checkConfigStatus } from './typert/index.js'
+import { LOCALES_FOR_REGISTER } from './typert/locale/index.js'
 
 export const CHANNEL_ID = 'dingtalk-connector' as const
 export const PLUGIN_NAME = '@local/dsh-channel-dingtalk'
@@ -61,7 +62,7 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
 
   // 2.5 PR-5: 把 locale 字典推到 ctx.locale（DSH locale plugin）
   //         schema 自动渲染表单，但 schema 的字段名要用 locale 文案展示
-  registerLocale(ctx)
+  registerAllLocales(ctx)
 
   // 2.6 PR-5: 把 config status 计算结果推给 settings UI 顶部 banner
   try {
@@ -116,27 +117,52 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
 }
 
 /**
- * PR-5: 把 channel-dingtalk locale 字典推到 ctx.locale.
- * DSH locale plugin 会合并到全局 locale store.
+ * PR-5 + PR-6b: 把 channel-dingtalk locale 字典（zh + en + ja）推到 ctx.locale.
+ *
+ * DSH contract（参考 dsh-client-locale/lib/client.js）：
+ *   - locale IDs 是 ['zh', 'en'] 等 base subtag，不是 ['zh-CN', 'en-US']
+ *   - `register(ns, dict)` 一行注册整个 dict（dict 形如 { zh: {...}, en: {...} }）
+ *   - 重复注册会抛错：locale namespace "X" already has locale "Y"
+ *   - 查找链：active locale → 'zh' fallback → common fallback → key 本身
+ *
+ * 本函数兼容 dsh-client-locale 与未来可能的 dsh-locale-intl：
+ *   - 优先检测 `register(ns, dict)` 形态（新版）
+ *   - 回退到 `register(ns, localeId, dict)` 形态（旧版）
+ *   - 都没有则 log warn（ctx.locale 不在 host composition 时常见）
  */
-function registerLocale(ctx: Context): void {
+function registerAllLocales(ctx: Context): void {
   const locale = ctx['locale'] as
     | {
-        register?: (namespace: string, dict: Record<string, string>) => unknown
+        register?: ((ns: string, dict: Record<string, Record<string, string>>) => unknown) &
+          ((ns: string, localeId: string, dict: Record<string, string>) => unknown)
       }
     | undefined
 
   if (!locale?.register) {
-    log.debug('ctx.locale not available; channel-dingtalk locale will not be registered')
+    log.debug('ctx.locale not available; channel-dingtalk locales will not be registered')
     return
   }
 
+  const NS = 'channel-dingtalk'
+
   try {
-    locale.register('channel-dingtalk', LOCALE['zh-CN'])
-    // en 字典需要按 DSH locale 的多语言机制注册；这里先注册 zh-CN
-    // 完整多语言：PR-6 接入 dsh-locale-intl
-    log.debug('registered channel-dingtalk locale (zh-CN)')
+    // 一次性注册全部 locale
+    locale.register(NS, LOCALES_FOR_REGISTER)
+    log.info(
+      `registered channel-dingtalk locales: ${Object.keys(LOCALES_FOR_REGISTER).join(', ')}`,
+    )
   } catch (err) {
-    log.warn('failed to register locale', err)
+    // 兼容老 API：register(ns, localeId, dict) —逐个注册
+    log.warn(`bulk locale.register failed, falling back to per-locale: ${(err as Error).message}`)
+    let registeredCount = 0
+    for (const [code, dict] of Object.entries(LOCALES_FOR_REGISTER)) {
+      try {
+        locale.register(NS, code, dict)
+        registeredCount++
+      } catch (innerErr) {
+        log.warn(`failed to register locale ${code}: ${(innerErr as Error).message}`)
+      }
+    }
+    log.info(`registered ${registeredCount} locales (fallback path)`)
   }
 }

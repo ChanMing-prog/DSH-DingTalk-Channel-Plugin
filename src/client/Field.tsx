@@ -7,25 +7,58 @@
 import { useCallback, type ReactNode } from 'react'
 
 // =============================================================================
-// useT — local locale resolver
+// useT — local locale resolver with fallback chain
 // =============================================================================
 
 export type Locale = Record<string, string>
 
+/**
+ * 默认 'zh' fallback dictionary — 与 DSH 服务端约定一致。
+ * 客户端 fallback 链：active → zh → key.
+ *
+ * 只放最关键的 ~10 个 key 以做 fallback，避免把整个 zh 字典复制过来。
+ * 完整翻译由 DSH 服务端 ctx.locale 提供。
+ */
+const ZH_FALLBACK: Record<string, string> = {
+  'channel-dingtalk.title': '钉钉 Channel',
+  'channel-dingtalk.enabled': '启用',
+  'channel-dingtalk.clientId': 'Client ID',
+  'channel-dingtalk.clientSecret': 'Client Secret',
+  'channel-dingtalk.accounts.title': '多账号 / 多机器人',
+  'channel-dingtalk.bindings.title': 'Agent 绑定',
+  'channel-dingtalk.groups.title': '群特定配置',
+  'channel-dingtalk.bridge.title': 'Bridge 行为',
+  'channel-dingtalk.limits.title': '消息限制',
+  'channel-dingtalk.status.allGood': '✅ 配置正确',
+}
+
+/**
+ * 查找 key: active locale → zh fallback → key 本身.
+ *
+ * 与 DSH 服务端 (dsh-client-locale) 的查找链对齐。
+ */
+export function resolveT(
+  active: Record<string, string>,
+  key: string,
+  params?: Record<string, string | number>,
+): string {
+  let v: string | undefined = active[key]
+  if (v === undefined) {
+    v = ZH_FALLBACK[key]
+  }
+  if (v === undefined) v = key
+  if (params) {
+    return v.replace(/\{(\w+)\}/g, (match, name) =>
+      name in params ? String(params[name]) : match,
+    )
+  }
+  return v
+}
+
 export function useT(locale: Locale) {
   return useCallback(
     (key: string, params?: Record<string, string | number>): string => {
-      let v = locale[key]
-      if (v === undefined) {
-        // 缺失时回退到 key 本身（settings UI 应尽早暴露缺失翻译）
-        v = key
-      }
-      if (params) {
-        for (const [k, val] of Object.entries(params)) {
-          v = v.replace(`{${k}}`, String(val))
-        }
-      }
-      return v
+      return resolveT(locale, key, params)
     },
     [locale],
   )
