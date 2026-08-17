@@ -113,11 +113,10 @@ function detectMediaType(ext: string): 'image' | 'file' | 'video' | 'voice' {
  *   2. 判断媒体类型
  *   3. 上传到钉钉 → 得到 media_id
  *   4. 按媒体类型分发：
- *      - image: 走 batchSend / groupMessages/send 的 msgKey='sampleImageMsg'
- *      - video: 用 [DINGTALK_VIDEO] 标记机制（PR-3 完善）
- *      - voice / file: 独立文件消息（PR-3 完善）
- *
- * 本 PR 实现 image 路径，其他类型返回"待 PR-3 完善"的成功占位。
+ *      - image: 走 sampleImageMsg（msgKey）
+ *      - video: 抽元数据 + 抽封面 + 上传两个 + sampleVideo
+ *      - voice: 抽时长 + 上传 + sampleAudio
+ *      - file:  上传 + sampleFile
  */
 export async function sendMediaToDingTalk(params: {
   creds: ResolvedDingtalkCredentials
@@ -144,6 +143,10 @@ export async function sendMediaToDingTalk(params: {
 
   const parsed = parseTargetString(target)
   const proactiveTarget = targetToProactiveTarget(parsed)
+  const aiCardTarget: import('./messaging-types.js').AICardTarget =
+    parsed.type === 'user'
+      ? { type: 'user', userId: parsed.userId }
+      : { type: 'group', openConversationId: parsed.openConversationId }
 
   // 1. 先发文本（如有）
   if (text && text.trim().length > 0) {
@@ -185,16 +188,12 @@ export async function sendMediaToDingTalk(params: {
     }
   }
 
-  const uploadResult = await uploadMediaToDingTalk(resolved, mediaType, oapiToken, maxSize, log)
-  if (!uploadResult) {
-    return sendProactive(creds, proactiveTarget, '⚠️ 媒体文件上传失败', {
-      msgType: 'text',
-      replyToId,
-    })
-  }
-
   // 4. 按类型分发
   if (mediaType === 'image') {
+    const uploadResult = await uploadMediaToDingTalk(resolved, mediaType, oapiToken, maxSize, log)
+    if (!uploadResult) {
+      return sendProactive(creds, proactiveTarget, '⚠️ 媒体文件上传失败', { msgType: 'text', replyToId })
+    }
     const result = await sendProactive(creds, proactiveTarget, uploadResult.mediaId, {
       msgType: 'image',
       replyToId,
@@ -202,12 +201,89 @@ export async function sendMediaToDingTalk(params: {
     return { ...result, processQueryKey: result.processQueryKey ?? 'image-message-sent' }
   }
 
-  // 视频 / 音频 / 文件：本 PR 提供占位实现（成功返回），PR-3 完善完整流程
-  log.info(`media type ${mediaType}: full proactive send deferred to PR-3 (media_id=${uploadResult.mediaId})`)
+  if (mediaType === 'video') {
+    const { sendVideoProactive } = await import('./media-proactive.js')
+    const { extractVideoMetadata, extractVideoThumbnail } = await import('./media-meta.js')
+    const fs = await import('fs')
+    const os = await import('os')
+    const pathMod = await import('path')
+    const { uploadMediaToDingTalk } = await import('./media.js')
+
+    // 提取元数据（ffmpeg 缺失时降级为 null）
+    const metadata = await extractVideoMetadata(resolved)
+
+    // 抽封面（第1秒），失败时不带封面继续发
+    let picMediaId = ''
+    const thumbPath = pathMod.join(os.tmpdir(), `thumb_${Date.now()}_${Math.random().toString(36).slice(2, 11)}.jpg`)
+    const thumbResult = await extractVideoThumbnail(resolved, thumbPath)
+    try {
+      if (thumbResult && fs.existsSync(thumbPath)) {
+        const picUpload = await uploadMediaToDingTalk(thumbPath, 'image', oapiToken, 20 * 1024 * 1024, log)
+        if (picUpload) picMediaId = picUpload.mediaId
+      }
+    } finally {
+      try { if (fs.existsSync(thumbPath)) fs.unlinkSync(thumbPath) } catch { /* ignore */ }
+    }
+
+    const videoUpload = await uploadMediaToDingTalk(resolved, 'video', oapiToken, maxSize, log)
+    if (!videoUpload) {
+      return sendProactive(creds, proactiveTarget, '⚠️ 视频上传失败', { msgType: 'text', replyToId })
+    }
+
+    const result = await sendVideoProactive(creds, aiCardTarget, videoUpload.mediaId, picMediaId, metadata ?? undefined)
+    return {
+      ok: result.ok,
+      usedAICard: false,
+      processQueryKey: result.processQueryKey ?? 'video-message-sent',
+      error: result.error,
+    }
+  }
+
+  if (mediaType === 'voice') {
+    const { sendAudioProactive } = await import('./media-proactive.js')
+    const { extractAudioDuration } = await import('./media-meta.js')
+    const { uploadMediaToDingTalk } = await import('./media.js')
+
+    const upload = await uploadMediaToDingTalk(resolved, 'voice', oapiToken, maxSize, log)
+    if (!upload) {
+      return sendProactive(creds, proactiveTarget, '⚠️ 音频上传失败', { msgType: 'text', replyToId })
+    }
+    const durationMs = await extractAudioDuration(resolved)
+    const result = await sendAudioProactive(
+      creds,
+      aiCardTarget,
+      mediaUrl,
+      upload.mediaId,
+      durationMs ?? undefined,
+    )
+    return {
+      ok: result.ok,
+      usedAICard: false,
+      processQueryKey: result.processQueryKey ?? 'audio-message-sent',
+      error: result.error,
+    }
+  }
+
+  // file 类型
+  const { sendFileProactive } = await import('./media-proactive.js')
+  const { uploadMediaToDingTalk } = await import('./media.js')
+  const pathMod = await import('path')
+
+  const upload = await uploadMediaToDingTalk(resolved, 'file', oapiToken, maxSize, log)
+  if (!upload) {
+    return sendProactive(creds, proactiveTarget, '⚠️ 文件上传失败', { msgType: 'text', replyToId })
+  }
+  const result = await sendFileProactive(
+    creds,
+    aiCardTarget,
+    { path: resolved, fileName: pathMod.basename(resolved), fileType: ext },
+    upload.mediaId,
+  )
   return {
-    ok: true,
+    ok: result.ok,
     usedAICard: false,
-    processQueryKey: `${mediaType}-message-uploaded`,
+    processQueryKey: result.processQueryKey ?? 'file-message-sent',
+    error: result.error,
   }
 }
 
@@ -247,7 +323,26 @@ export {
   extractVideoMarkers,
   extractAudioMarkers,
   extractFileMarkers,
+  type VideoInfo,
+  type AudioInfo,
+  type FileInfo,
 } from './media.js'
+export {
+  extractVideoMetadata,
+  extractVideoThumbnail,
+  extractAudioDuration,
+  type VideoMetadata,
+} from './media-meta.js'
+export {
+  sendVideoProactive,
+  sendAudioProactive,
+  sendFileProactive,
+} from './media-proactive.js'
+export {
+  processVideoMarkers,
+  processAudioMarkers,
+  processFileMarkers,
+} from './media-markers.js'
 export { getAccessToken, getOapiAccessToken, clearTokenCache } from './tokens.js'
 export {
   DINGTALK_API,
@@ -264,4 +359,4 @@ export {
 } from './messaging-types.js'
 
 // 直接供 DSH tools/runtime 用的"high-level"形态
-export const __messagingVersion = '0.2.0'
+export const __messagingVersion = '0.3.0'

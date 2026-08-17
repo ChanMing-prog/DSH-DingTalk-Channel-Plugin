@@ -5,6 +5,75 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] — 2026-08-17 (PR-3)
+
+### Added
+- **`src/apis/media-meta.ts`** — video/audio metadata extraction
+  - `extractVideoMetadata(filePath)` → `{ duration, width, height }` via ffprobe
+  - `extractVideoThumbnail(videoPath, outputPath?)` → temp jpg via ffmpeg screenshot at t=1s
+  - `extractAudioDuration(filePath)` → ms via ffprobe
+  - All three: ffmpeg/ffprobe loaded via dynamic `await import`; missing → return null, never throw
+- **`src/apis/media-proactive.ts`** — sample* message senders
+  - `sendVideoProactive(creds, target, videoMediaId, picMediaId, metadata?)` → `sampleVideo` to `groupMessages/send` / `orboxMessages/batchSend`
+  - `sendAudioProactive(creds, target, fileName, mediaId, durationMs?)` → `sampleAudio`, default duration 60000ms
+  - `sendFileProactive(creds, target, fileInfo, mediaId)` → `sampleFile` with fileName/fileType defaults
+  - Shared `postSampleMessage` helper: token + endpoint selection + `processQueryKey` check
+- **`src/apis/media-markers.ts`** — full proactive marker processing
+  - `processVideoMarkers(content, { creds, target, maxBytes? })`:
+    - Extracts JSON markers → validates file existence → extracts metadata → extracts thumbnail → uploads video + thumbnail → sends sampleVideo
+    - Failure modes: missing oapiToken / invalid JSON / non-existent file / ffmpeg missing / upload failure → status messages appended, never thrown
+  - `processAudioMarkers(content, opts)`:
+    - Extracts JSON markers → extracts duration (optional) → uploads voice → sends sampleAudio
+  - `processFileMarkers(content, opts)`:
+    - Extracts JSON markers → uploads file → sends sampleFile
+  - Temp thumbnails are cleaned up in `finally` block
+- New tool: **`dingtalk_process_markers`** — DSH tool wrapping marker processing + AI Card send
+  - Agent writes `content with markers, calls dingtalk_process_markers` → markers become independent messages, remaining text becomes AI Card
+
+### Changed
+- `apis/messaging.ts`:
+  - `sendMediaToDingTalk` now handles all 4 media types end-to-end:
+    - `image`: existing path (sampleImageMsg)
+    - `video`: extract metadata + thumbnail → upload both → `sendVideoProactive`
+    - `voice`: extract duration → upload → `sendAudioProactive`
+    - `file`: upload → `sendFileProactive`
+  - Re-exports `media-meta`, `media-proactive`, `media-markers` modules
+  - Version bump: `__messagingVersion` 0.2.0 → 0.3.0
+- `apis/messaging-proactive.ts`:
+  - `sendAICardInternal` now actually processes video/audio/file markers (was placeholder logs)
+  - Calls `processVideoMarkers` / `processAudioMarkers` / `processFileMarkers` in sequence
+- `runtime/ai-card.ts`:
+  - `createAiCard` calls full `createAICardForTarget` (2-step: create + deliver) and stores the real `AICardInstance` (with token/expire/inputingStarted) into `bctx.cardRealCache`
+  - `appendAiCardChunk` calls full `apisStreamAICard` (QPS limiter + INPUTING transition + Markdown fix)
+  - `completeAiCard` calls full `apisFinishAICard` (FINISHED status + backoff retry)
+  - `failAiCard` reuses `apisFinishAICard` with error text
+- `tools/index.ts`: registers `dingtalk_process_markers` (NEW)
+- `package.json`:
+  - Version: 0.2.0 → **0.3.0**
+  - `optionalDependencies` adds: `fluent-ffmpeg`, `@ffmpeg-installer/ffmpeg`, `@ffprobe-installer/ffprobe`
+
+### Preserved from upstream
+- `processVideoMarkers` failure status reporting (✅ / ⚠️ emoji prefixes)
+- Thumbnail extraction at exactly t=1s
+- 20MB default cap (image: 10MB; voice: 2MB)
+- Default duration fallback to 60000ms when ffprobe fails
+
+### Known Limitations (carried forward)
+- 6 remaining tools (doc/sheet/calendar/task/log/ding) still placeholder
+- Multi-bot mentions still stub
+- No reconnect/retry beyond dingtalk-stream keepalive
+- `DINGTALK_STRICT_DUPLICATE_LOAD` not ported
+
+### Security
+- ffmpeg/ffprobe path overrides use installer-provided paths (no shell injection)
+- Temp thumbnails cleaned in `finally` (no disk leak)
+
+### Tests
+- **`tests/media-proactive.test.ts`** (NEW): 22 cases
+  - `sendVideoProactive` / `sendAudioProactive` / `sendFileProactive`: msgKey, payload, default fallbacks
+  - `extractVideoMetadata` / `extractAudioDuration` / `extractVideoThumbnail`: null-safety when fluent-ffmpeg missing
+  - `processVideoMarkers` / `processAudioMarkers` / `processFileMarkers`: no-token / no-marker / invalid JSON / non-existent file / full flow with real fs temp file
+
 ## [0.2.0] — 2026-08-17 (PR-2)
 
 ### Added

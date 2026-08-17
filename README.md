@@ -16,8 +16,9 @@
 | 类别 | 能力 | 状态 |
 |------|------|------|
 | 💬 **消息收发** | 私聊/群聊接收 + 自动回复，文本/Markdown，@成员 | ✅ PR-2 |
-| 🌊 **AI Card 流式** | 打字机效果，AI Card 中实时流式显示推理与回复 | ✅ PR-2（含 QPS 限流） |
-| 🖼️ **媒体上传** | 图片/视频/音频/文件上传 + 自动发送 | ✅ PR-2（image 完整，其他 PR-3） |
+| 🌊 **AI Card 流式** | 打字机效果，AI Card 中实时流式显示推理与回复 | ✅ PR-3（runtime 接入完整 streamAICard） |
+| 🖼️ **媒体上传** | 图片/视频/音频/文件上传 + 自动发送 | ✅ PR-3（视频抽封面、音频抽时长全跑通） |
+| 🎬 **视频/音频/文件 marker** | `[DINGTALK_VIDEO]` 等标记扫描 + 上传 + 独立消息 | ✅ PR-3 |
 | 📄 **钉钉文档** | 创建、追加、搜索、列举 | 🟡 占位 |
 | 🔔 **DING 消息** | 强提醒推送 | 🟡 占位 |
 | ✅ **待办任务** | 个人/群待办 CRUD | 🟡 占位 |
@@ -119,10 +120,12 @@ export DINGTALK_CLIENT_SECRET=...
 - [x] W2：stream bridge + 会话路由 + 群/私聊策略
 - [x] W3：**AI Card 流式响应 + apis/messaging 完整协议层**（PR-2）
 - [x] W3：**媒体上传 + 图片后处理 + send_media 工具**（PR-2）
-- [ ] W4：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
-- [ ] W5：typert 设置 UI + 文档
-- [ ] W6-W7：稳定性、断线重连
-- [ ] W8：发布与生态接入
+- [x] W4：**视频/音频/文件完整主动发送流程 + marker processor**（PR-3）
+- [x] W4：**runtime/ai-card.ts 接入完整 apis/streamAICard + apis/finishAICard**（PR-3）
+- [ ] W5：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
+- [ ] W6：typert 设置 UI + 文档
+- [ ] W7-W8：稳定性、断线重连
+- [ ] W9：发布与生态接入
 
 ---
 

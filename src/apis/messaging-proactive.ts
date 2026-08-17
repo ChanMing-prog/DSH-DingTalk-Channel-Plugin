@@ -27,12 +27,12 @@ import {
   createAICardForTarget,
   finishAICard,
 } from './messaging-ai-card.js'
+import { processLocalImages } from './media.js'
 import {
-  processLocalImages,
-  extractVideoMarkers,
-  extractAudioMarkers,
-  extractFileMarkers,
-} from './media.js'
+  processVideoMarkers,
+  processAudioMarkers,
+  processFileMarkers,
+} from './media-markers.js'
 
 const log = createLogger('dingtalk-proactive')
 
@@ -144,10 +144,11 @@ async function sendAICardInternal(
       processedContent = await processLocalImages(content, oapiToken, log)
     }
 
-    // 2. 视频/音频/文件标记 —— 主动发送场景下，标记会触发独立消息
-    const videos = extractVideoMarkers(processedContent).videos
-    const audios = extractAudioMarkers(processedContent).audios
-    const files = extractFileMarkers(processedContent).files
+    // 2. 视频/音频/文件标记 —— 每个标记触发独立消息（上传 + 发送）
+    const markerOpts = { creds, target, maxBytes: 20 * 1024 * 1024 }
+    processedContent = await processVideoMarkers(processedContent, markerOpts)
+    processedContent = await processAudioMarkers(processedContent, markerOpts)
+    processedContent = await processFileMarkers(processedContent, markerOpts)
 
     // 3. 创建 + 完成 AI Card
     const card = await createAICardForTarget(creds, target, options)
@@ -155,18 +156,6 @@ async function sendAICardInternal(
       return { ok: false, error: 'failed to create AI Card', usedAICard: false }
     }
     await finishAICard(card, processedContent, creds, options)
-
-    // 4. 视频/音频/文件作为独立消息附带（先用占位实现）
-    //    完整 PR（PR-3+）会接入具体的上传 + 发送
-    for (const v of videos) {
-      log.debug(`[AICard] video marker detected: ${v.path} (placeholder; full impl in PR-3)`)
-    }
-    for (const a of audios) {
-      log.debug(`[AICard] audio marker detected: ${a.path} (placeholder; full impl in PR-3)`)
-    }
-    for (const f of files) {
-      log.debug(`[AICard] file marker detected: ${f.path} (placeholder; full impl in PR-3)`)
-    }
 
     log.debug(`[AICard] sent to ${targetDesc}, cardInstanceId=${card.cardInstanceId}`)
     return { ok: true, cardInstanceId: card.cardInstanceId, usedAICard: true }
