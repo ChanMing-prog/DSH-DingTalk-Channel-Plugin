@@ -5,6 +5,80 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] — 2026-08-17 (PR-8: Stability — heartbeat + reconnect + token scheduler)
+
+### Added
+- **`src/runtime/stability.ts`** — StreamConnection with production-grade stability:
+  - `StreamConnection.create(creds, accountId, opts)` — creates a managed connection
+    wrapping `dingtalk-stream` SDK `DWClient`
+  - **Heartbeat**: 10s interval, native WebSocket `ping()`; 20s timeout triggers reconnect
+  - **Exponential backoff**: `calculateBackoffDelay(attempt)` — `1s * 2^attempt + jitter`,
+    capped at 30s; used for every reconnect attempt
+  - **Immediate reconnect on server disconnect topic**: intercepts `SYSTEM.disconnect`
+    topic message → reconnect without backoff (dingtalk LB/instance switch pattern)
+  - **Immediate reconnect on WebSocket close**: `client.socket.on('close')` → reconnect
+  - **AI-task grace period**: `markProcessingStart()` refreshes `lastSocketAvailableTime`
+    every 15s during AI long-tasks to prevent heartbeat timeout during tool execution
+  - **Message dedup (double-layer)**:
+    - Protocol layer: `headers.messageId` — deduplicates same-delivery repeated callbacks
+    - Business layer: `data.msgId` — deduplicates server-side retransmissions (headers change
+      but `data.msgId` stays the same)
+    - TTL: 5 min, probabilistic 1% cleanup
+  - **SDK console noise suppression**: filters `Disconnecting.` / `[timestamp] connect success`
+    from `dingtalk-stream` SDK to avoid ops confusion during normal reconnects
+  - `conn.onMessage(handler)` / `conn.onStatus(callback)` — register inbound + status callbacks
+  - `conn.start()` returns disposer; `conn.stop()` cleans up all timers + listeners
+  - `conn.connected` / `conn.stats` for runtime introspection
+- **`src/apis/tokens.ts`** — `startTokenRefreshScheduler(creds, intervalMinutes)`:
+  - Proactively refreshes `accessToken` every 50 min (before 2h expiry)
+  - Also refreshes `oapiAccessToken` on each cycle
+  - `stopTokenRefreshScheduler()` to cancel
+  - Called from `apply()` after stream bridge starts
+- **`tests/stability.test.ts`** — 11 tests:
+  - `calculateBackoffDelay`: ~1s on attempt 0, exponential growth, 30s cap, jitter variation
+  - `checkAndMarkMessage`: first-call false, protocol dedup, business dedup, cross-account independence, undefined handling
+  - `StreamConnection` import: module structure
+  - Token scheduler: start/stop, double-start safety
+
+### Changed
+- `runtime/stream.ts`:
+  - `startStreamForAccount` now creates `StreamConnection` (from `stability.ts`)
+    instead of raw `DWClient` with manual `client.start()` / `client.close()`
+  - Message handler calls `parseInboundMessage(res, accountId)` with StreamConnection
+    callback shape instead of raw dingtalk-stream callback
+  - `startDingtalkStreamBridge` compat signature preserved for backward compatibility
+- `apply()`:
+  - Calls `startTokenRefreshScheduler(creds, 50)` after stream bridge starts
+  - Calls `stopTokenRefreshScheduler()` on fiber unload
+- `package.json`: 0.9.0 → **1.0.0**
+
+### Preserved from upstream
+- All constants: `HEARTBEAT_INTERVAL=10s`, `TIMEOUT_THRESHOLD=20s`,
+  `BASE_BACKOFF_DELAY=1s`, `MAX_BACKOFF_DELAY=30s` (exact upstream values)
+- `doReconnect(immediate)` logic: disconnect old → connect → wait open event
+  (10s timeout) → reset counters → report connected
+- `setupPongListener` / `setupCloseListener` / `setupDisconnectTopicListener`
+  structure (fork of connection.ts:356-406)
+- `markProcessingStart/End` (fork of connection.ts:219-254) with 15s refresh
+- `checkAndMarkMessage` double-layer dedup (protocol + business)
+- SDK console noise filter (exact same filter patterns)
+
+### Known Limitations
+- Token scheduler is per-`credentials` object; in multi-account mode, each
+  account's `resolveCredentials` returns its own credentials object, so the
+  scheduler refreshes the default-account's token. Multi-account token refresh
+  requires iterating `listAccountIds` and scheduling per-account (deferred).
+- `StreamConnection` does not expose raw `DWClient.socket` — AI Card creation
+  uses HTTP APIs exclusively (no socket callback path). CardReplier is noted
+  as available but intentionally skipped.
+- macOS LaunchAgent EBADF fix from upstream (connection.ts:152-174) is not
+  ported (not needed for most DSH deployments).
+
+### Security
+- Message dedup TTL prevents replay attacks within 5min window
+- Token proactive refresh prevents mid-operation expiry (e.g., during long
+  AI Card streaming or tool execution)
+
 ## [0.9.0] — 2026-08-17 (PR-7: Remove placeholder tools)
 
 ### Removed

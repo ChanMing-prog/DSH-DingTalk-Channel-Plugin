@@ -231,7 +231,7 @@ export DINGTALK_CLIENT_SECRET=...
 - [x] W8：**完整 locale + DSH locale 插件的多语言注册**（PR-6b）
 - [x] W9：**Typert Remote service + manifest 契约验证 + lint 脚本**（PR-6c）
 - [x] W10：删除 6 个不适用占位 tool（PR-7）
-- [ ] W11：稳定性、断线重连
+- [x] W11：**StreamConnection + 心跳 + 退避重连 + 消息去重 + token 主动续期**（PR-8）
 - [ ] W12：发布与生态接入
 
 ---

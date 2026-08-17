@@ -34,6 +34,7 @@ import { checkConfigStatus, lintTypert } from './typert/index.js'
 import { LOCALES_FOR_REGISTER } from './typert/locale/index.js'
 import { registerConfigStatusService } from './typert/reflect.js'
 import { TOP_LEVEL_SCHEMA_FIELDS } from './typert/schema-fields.js'
+import { startTokenRefreshScheduler, stopTokenRefreshScheduler } from './apis/tokens.js'
 
 export const CHANNEL_ID = 'dingtalk-connector' as const
 export const PLUGIN_NAME = '@local/dsh-channel-dingtalk'
@@ -124,6 +125,10 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
       accounts: Object.keys(config.accounts ?? {}).filter((id) => config.accounts?.[id]?.enabled !== false).length || 1,
       defaultAccount: config.defaultAccount,
     })
+
+    // 5.5 PR-8: token proactive refresh scheduler
+    // 2h token 有效期 → 每 50min 主动刷新一次，避免 AI 长任务中间过期
+    startTokenRefreshScheduler(creds, 50)
   } catch (err) {
     log.error('failed to start dingtalk stream bridges', err)
   }
@@ -135,6 +140,11 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
       stopBridge?.()
     } catch (err) {
       log.error('error stopping stream bridge', err)
+    }
+    try {
+      stopTokenRefreshScheduler()
+    } catch (err) {
+      log.error('error stopping token refresh scheduler', err)
     }
     try {
       disposeConfigStatus?.()

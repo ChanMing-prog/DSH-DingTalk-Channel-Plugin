@@ -97,12 +97,12 @@ export function startDingtalkStreamBridge(
   return startDingtalkStreamBridges(ctx, rawConfig, credentials)
 }
 
-interface StreamClient {
-  registerCallbackListener: (path: string, listener: (res: unknown) => void) => void
-  start: () => Promise<void>
-  close: () => void
-}
-
+/**
+ * PR-8: 使用 StreamConnection（带心跳 + 退避重连 + 消息去重）替代原始 DWClient。
+ *
+ * 每个 accountId 创建一个独立的 StreamConnection 实例，
+ * 每个实例有独立的重连状态、心跳定时器、去重缓存。
+ */
 function startStreamForAccount(
   ctx: Context,
   config: DingtalkConfig,
@@ -122,60 +122,69 @@ function startStreamForAccount(
     pairedStaffIds: new Set(),
   }
 
-  let client: StreamClient | null = null
+  let conn: InstanceType<typeof StreamConnection> | null = null
+  let disposer: (() => void) | null = null
 
   void (async () => {
     try {
-      // @ts-expect-error - 运行时才有此模块
-      const stream = await import('dingtalk-stream')
-      const CardReplier = stream.CardReplier || stream.default?.CardReplier
-      const ChatBotHandler = stream.ChatBotHandler || stream.default?.ChatBotHandler
-      const DWClient = stream.DWClient || stream.default?.DWClient
+      const { StreamConnection } = await import('./stability.js')
 
-      if (!DWClient) {
-        log.error(`[${accountId}] dingtalk-stream SDK missing DWClient; check installation`)
-        return
-      }
+      conn = await StreamConnection.create(
+        { clientId: credentials.clientId, clientSecret: credentials.clientSecret },
+        accountId,
+      )
 
-      const dwClient = new DWClient({
-        appKey: credentials.clientId,
-        appSecret: credentials.clientSecret,
+      // 注册消息回调
+      conn.onMessage((res) => {
+        try {
+          const msg = parseInboundMessage(res, accountId)
+          void processInboundMessage(bridgeCtx, msg)
+        } catch (err) {
+          log.error(`[${accountId}] failed to handle message`, err)
+        }
       })
 
-      if (ChatBotHandler) {
-        new ChatBotHandler({ dwClient })
-        dwClient.registerCallbackListener(
-          '/v1.0/im/bot/messages/get',
-          (res: unknown) => {
-            try {
-              const msg = parseInboundMessage(res, accountId)
-              void processInboundMessage(bridgeCtx, msg)
-            } catch (err) {
-              log.error(`[${accountId}] failed to handle chat-bot message`, err)
-            }
-          },
-        )
+      // 注册连接状态回调（用于 UI 显示）
+      conn.onStatus((patch) => {
+        log.debug(`[${accountId}] status change`, patch)
+      })
+
+      disposer = await conn.start()
+
+      // 也注册 CardReplier（如果 SDK 支持）
+      try {
+        // @ts-expect-error - 运行时才有此模块
+        const stream = await import('dingtalk-stream')
+        const CardReplier = stream.CardReplier ?? stream.default?.CardReplier
+        if (CardReplier) {
+          // CardReplier 需要原始 DWClient，但我们不暴露它。
+          // AI Card 创建/推送走 apis/messaging-ai-card.ts（独立 HTTP），
+          // 不需要 CardReplier 的 socket callback 路径。
+          // 保留 CardReplier 注册以防某些边缘场景需要。
+          log.debug(`[${accountId}] CardReplier available but skipped (AI Card uses HTTP)`)
+        }
+      } catch {
+        /* CardReplier is optional */
       }
 
-      if (CardReplier) {
-        const cardReplier = new CardReplier({ dwClient })
-        dwClient.registerCallbackListener('/v1.0/card/instances/create', (res: unknown) => cardReplier.cardInstanceCreated(res))
-        dwClient.registerCallbackListener('/v1.0/card/instances/update', (res: unknown) => cardReplier.cardInstanceUpdated(res))
-      }
-
-      await dwClient.start()
-      client = dwClient
-      log.info(`[${accountId}] dingtalk-stream client started`, { clientId: credentials.clientId })
+      log.info(`[${accountId}] stream connection started (with heartbeat + reconnect)`, {
+        clientId: credentials.clientId,
+      })
     } catch (err) {
-      log.error(`[${accountId}] failed to start dingtalk-stream client`, err)
+      log.error(`[${accountId}] failed to start stream connection`, err)
     }
   })()
 
   return () => {
     try {
-      client?.close?.()
+      disposer?.()
     } catch (err) {
-      log.error(`[${accountId}] error closing dingtalk-stream client`, err)
+      log.error(`[${accountId}] error stopping stream connection`, err)
+    }
+    try {
+      conn?.stop()
+    } catch (err) {
+      log.error(`[${accountId}] error stopping stream connection (backup)`, err)
     }
   }
 }

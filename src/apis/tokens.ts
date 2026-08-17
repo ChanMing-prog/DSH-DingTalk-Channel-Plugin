@@ -150,3 +150,58 @@ export async function withTokenHeader(
 export function clearTokenCache(): void {
   tokenCache.clear()
 }
+
+// =============================================================================
+// Proactive token refresh scheduler
+// =============================================================================
+
+let tokenRefreshTimer: ReturnType<typeof setInterval> | null = null
+
+/**
+ * 启动 token 主动续期定时器。
+ *
+ * 钉钉 token 有效期 2h。我们在到期前 10min 主动刷新一次，
+ * 确保 token 不会在 AI Card 流式发送、长任务处理等中间过期。
+ *
+ * 不需要调用方 await —— 在后台运行。
+ * 调用方只需在 `apply()` 里调用一次，或在新账号 credentials 变更时调用。
+ *
+ * @param creds 凭证（新账号凭证变更时重新调用以替换）
+ * @param intervalMinutes 刷新间隔，默认 50min（2h 内至少刷新 2 次）
+ */
+export function startTokenRefreshScheduler(
+  creds: ResolvedDingtalkCredentials,
+  intervalMinutes: number = 50,
+): () => void {
+  stopTokenRefreshScheduler()
+
+  const intervalMs = intervalMinutes * 60 * 1000
+  tokenRefreshTimer = setInterval(async () => {
+    try {
+      const token = await getAccessToken(creds)
+      log.debug('proactive token refresh successful')
+      void token // 忽略返回值，只确保缓存被刷新
+      // 同时刷新 oapi token
+      try {
+        await getOapiAccessToken(creds)
+      } catch {
+        log.warn('oapi token refresh failed (non-fatal)')
+      }
+    } catch (err) {
+      log.warn('proactive token refresh failed', err)
+    }
+  }, intervalMs)
+
+  log.info(`token refresh scheduler started (interval=${intervalMinutes}min)`)
+  return stopTokenRefreshScheduler
+}
+
+/**
+ * 停止 token 续期定时器。
+ */
+export function stopTokenRefreshScheduler(): void {
+  if (tokenRefreshTimer) {
+    clearInterval(tokenRefreshTimer)
+    tokenRefreshTimer = null
+  }
+}
