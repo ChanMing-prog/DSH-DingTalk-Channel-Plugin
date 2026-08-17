@@ -1,6 +1,6 @@
 {
   "name": "@local/dsh-channel-dingtalk",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "DeepSeek Harness 的钉钉 Channel 插件。把钉钉官方 OpenClaw Connector 剥离 OpenClaw 依赖、重写为 DSH 原生插件。",
   "type": "module",
   "main": "./dist/apply.js",
@@ -8,7 +8,7 @@
     ".": "./dist/apply.js",
     "./tools": "./dist/tools/index.js",
     "./settings-schema": "./dist/settings-schema.js",
-    "./client": "./dist/client.js",
+    "./client": "./dist/client/index.js",
     "./typert": "./dist/typert/index.js"
   },
   "files": [
@@ -21,8 +21,10 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:client": "tsc -p tsconfig.client.json",
     "dev": "tsc -p tsconfig.json --watch",
     "type-check": "tsc --noEmit",
+    "type-check:client": "tsc -p tsconfig.client.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -57,7 +59,8 @@
     "@deepseek-ai/dsh-credentials": ">=0.1.0-rc.6",
     "@deepseek-ai/dsh-agent": ">=0.1.0-rc.6",
     "@deepseek-ai/dsh-session": ">=0.1.0-rc.6",
-    "@deepseek-ai/dsh-jobs-local": ">=0.1.0-rc.6"
+    "@deepseek-ai/dsh-jobs-local": ">=0.1.0-rc.6",
+    "react": "^18.2.0"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-credentials": { "optional": true }
@@ -76,8 +79,14 @@
     "@ffprobe-installer/ffprobe": "^2.1.0"
   },
   "devDependencies": {
+    "@testing-library/react": "^16.0.0",
     "@types/node": "^20.19.37",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
     "axios-mock-adapter": "^1.22.0",
+    "happy-dom": "^15.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "typescript": "^5.6.0",
     "vitest": "^2.1.9"
   }

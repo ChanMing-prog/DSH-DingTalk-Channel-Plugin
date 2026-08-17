@@ -233,9 +233,10 @@ export DINGTALK_CLIENT_SECRET=...
 - [x] W5：**多账号 / 多机器人 / bindings 完整支持**（PR-4）
 - [x] W5：**multi-stream bridge：每个 account 一个独立 DWClient**（PR-4）
 - [x] W6：**DSH Typert settings UI（manifest + locale + sections + status）**（PR-5）
-- [ ] W7：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
-- [ ] W8-W9：稳定性、断线重连
-- [ ] W10：发布与生态接入
+- [x] W7：**多账号 React 自定义组件（AccountsEditor / BindingsEditor / GroupsEditor）**（PR-6a）
+- [ ] W8：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
+- [ ] W9-W10：稳定性、断线重连
+- [ ] W11：发布与生态接入
 
 ---
 

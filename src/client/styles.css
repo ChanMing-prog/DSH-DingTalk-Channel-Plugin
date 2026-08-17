@@ -1,0 +1,334 @@
+/**
+ * Channel-DingTalk Settings UI — scoped CSS.
+ *
+ * Self-contained: we don't import dsh-client-ui-* primitives because the
+ * build pipeline (esbuild on the DSH side) bundles our ./client export
+ * without resolving transitive deps from sibling packages.
+ *
+ * All class names are prefixed with `dct-` to avoid collision with DSH's
+ * own design-system classes (`dsw-*`).
+ */
+
+.dct-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  background: var(--dsw-alias-bg-layer-3, #fff);
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary, #111);
+}
+
+.dct-card--header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+}
+
+.dct-card--title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.dct-card--subtitle {
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #888);
+  margin: 4px 0 0;
+}
+
+/* Status banner */
+.dct-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.dct-banner--ok {
+  background: rgba(40, 207, 141, 0.1);
+  color: #28cf8d;
+}
+
+.dct-banner--warn {
+  background: rgba(255, 184, 0, 0.1);
+  color: #ffb800;
+}
+
+.dct-banner--error {
+  background: rgba(255, 76, 76, 0.1);
+  color: #ff4c4c;
+}
+
+/* Sections */
+.dct-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.02));
+}
+
+.dct-section--header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.dct-section--title {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.dct-section--chevron {
+  transition: transform 0.15s ease;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary, #888);
+}
+
+.dct-section--chevron.open {
+  transform: rotate(90deg);
+}
+
+/* Fields */
+.dct-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.dct-field--label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary, #111);
+}
+
+.dct-field--hint {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #888);
+  margin: 0;
+}
+
+.dct-field--invalid {
+  font-size: 11px;
+  color: var(--dsw-alias-label-error, #ff4c4c);
+  margin: 0;
+}
+
+.dct-input,
+.dct-select,
+.dct-textarea {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3, #fff);
+  color: var(--dsw-alias-label-primary, #111);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  box-sizing: border-box;
+}
+
+.dct-input:focus,
+.dct-select:focus,
+.dct-textarea:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary, #1677ff);
+}
+
+.dct-input:disabled {
+  background: var(--dsw-alias-bg-layer-1, rgba(0, 0, 0, 0.04));
+  cursor: not-allowed;
+}
+
+.dct-textarea {
+  min-height: 60px;
+  resize: vertical;
+  font-family: monospace;
+  font-size: 12px;
+}
+
+.dct-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+/* Account panel (multi-account list) */
+.dct-accounts {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dct-account {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-3, #fff);
+}
+
+.dct-account--header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.dct-account--id {
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--dsw-alias-bg-module-platform, rgba(0, 0, 0, 0.05));
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.dct-account--actions {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.dct-account--body {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.dct-account--body .dct-field--full {
+  grid-column: 1 / -1;
+}
+
+/* Buttons */
+.dct-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.15));
+  background: var(--dsw-alias-bg-layer-3, #fff);
+  color: var(--dsw-alias-label-primary, #111);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.dct-btn:hover {
+  background: var(--dsw-alias-bg-layer-2, rgba(0, 0, 0, 0.05));
+}
+
+.dct-btn--primary {
+  background: var(--dsw-alias-brand-primary, #1677ff);
+  color: #fff;
+  border-color: var(--dsw-alias-brand-primary, #1677ff);
+}
+
+.dct-btn--primary:hover {
+  background: #4096ff;
+}
+
+.dct-btn--danger {
+  color: #ff4c4c;
+  border-color: rgba(255, 76, 76, 0.3);
+}
+
+.dct-btn--danger:hover {
+  background: rgba(255, 76, 76, 0.08);
+}
+
+.dct-btn--add {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+/* Binding table */
+.dct-bindings {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dct-binding {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 12px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-3, #fff);
+}
+
+.dct-binding--arrow {
+  color: var(--dsw-alias-label-tertiary, #888);
+}
+
+/* Groups editor */
+.dct-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dct-group {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr auto;
+  gap: 8px;
+  align-items: end;
+  padding: 8px;
+  border: 1px solid var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.08));
+  border-radius: 6px;
+}
+
+/* Help text */
+.dct-help {
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary, #888);
+  line-height: 1.5;
+}
+
+.dct-help code {
+  font-family: monospace;
+  background: var(--dsw-alias-bg-module-platform, rgba(0, 0, 0, 0.05));
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* Dark mode auto-adjust */
+@media (prefers-color-scheme: dark) {
+  .dct-card,
+  .dct-account,
+  .dct-binding,
+  .dct-group {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  .dct-input,
+  .dct-select,
+  .dct-textarea {
+    background: rgba(255, 255, 255, 0.04);
+    color: #eee;
+  }
+}

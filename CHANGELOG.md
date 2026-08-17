@@ -5,6 +5,65 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] — 2026-08-17 (PR-6a: Multi-account React components)
+
+### Added
+- **Browser-side React app for multi-account / multi-bot settings UI**
+  - **`src/client/Field.tsx`** — shared field primitives (TextField, TextAreaField,
+    SelectField, CheckboxField, Section, Button, useT) — plain React 18,
+    no DSH dependency
+  - **`src/client/AccountsEditor.tsx`** — multi-account CRUD UI:
+    - Add / remove / edit accounts in a collapsible panel list
+    - Per-account form: enabled, friendlyName, chatbotUserId, clientId,
+      clientSecret (masked), dmPolicy, groupPolicy, allowFrom
+    - Auto-generates `bot-N` ids, never collides with existing keys
+  - **`src/client/BindingsEditor.tsx`** — bindings editor:
+    - Add / remove / edit (agentId → accountId) pairs
+    - Account select shows `default` + all configured accounts
+  - **`src/client/GroupsEditor.tsx`** — per-conversation group config:
+    - Add / remove (conversationId → { requireMention, groupSessionScope })
+  - **`src/client/ChannelCard.tsx`** — root card:
+    - Status banner driven by checkConfigStatus() warnings
+    - Sections: Basic (credentials + system prompt), Accounts, Bindings,
+      Groups, Bridge (wakeup/timeouts), Limits (collapsed)
+    - Help footer with open-platform / env-vars / multi-account docs
+  - **`src/client/styles.css`** — scoped CSS using DSH design-system CSS
+    variables (`--dsw-*`) with dark-mode auto-adapt
+  - **`src/client/types.ts`** — React-friendly types (mirror settings-schema)
+  - **`src/client/index.ts`** — `clientManifest` with `settings.plugins.tab`
+    and `settings.plugin.item` slot registrations, plus React component
+    re-exports and a `mount(el, props)` helper
+- **`tsconfig.client.json`** — JSX/React preset for `tsc -p tsconfig.client.json`
+- **`vitest.config.ts`** — happy-dom environment + JSX automatic transform
+- **`tests/client.test.tsx`** — 19 React Testing Library tests:
+  - Field primitives: TextField, SelectField, CheckboxField, Section, Button, useT
+  - Editors: AccountsEditor (empty / add / unique-id), BindingsEditor (empty / add),
+    GroupsEditor (empty / add)
+  - ChannelCard integration: status banner (ok / partial_config /
+    bindings_missing / not_configured), sections rendering
+
+### Changed
+- `package.json`:
+  - Version: 0.5.0 → **0.6.0**
+  - `exports`: `./client` → `./dist/client/index.js`
+  - `peerDependencies`: adds `react: ^18.2.0`
+  - `devDependencies`: adds `react`, `react-dom`, `@types/react`, `@types/react-dom`,
+    `@testing-library/react`, `happy-dom`
+- `scripts`:
+  - `build:client` — `tsc -p tsconfig.client.json` (compile client to dist-client/)
+  - `type-check:client` — same with --noEmit
+
+### Known Limitations
+- DSH will call esbuild itself to bundle our `./client` export (we don't ship
+  prebuilt browser code; the build:client script is for type-checking / CI
+  only). When `@testing-library/react` + `happy-dom` aren't installed in the
+  consumer deployment, the client tests are skipped — that matches the DSH
+  assumption that browser deps are provided by the shell.
+- React component bundle currently assumes `react` is in the consumer's
+  peerDependencies (DSH satisfies this).
+- The custom widgets ship fully functional — no `dsh-client-ui-*` imports
+  (per the DSH build pipeline that does not bundle sibling-package deps).
+
 ## [0.5.0] — 2026-08-17 (PR-5)
 
 ### Added
