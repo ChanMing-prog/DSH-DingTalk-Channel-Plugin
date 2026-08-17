@@ -11,20 +11,14 @@
 
 ## 它做什么
 
-把钉钉的 7 类能力接入 DeepSeek Harness（DSH）：
+把钉钉的核心能力接入 DeepSeek Harness（DSH）：
 
 | 类别 | 能力 | 状态 |
 |------|------|------|
-| 💬 **消息收发** | 私聊/群聊接收 + 自动回复，文本/Markdown，@成员 | ✅ PR-2 |
-| 🌊 **AI Card 流式** | 打字机效果，AI Card 中实时流式显示推理与回复 | ✅ PR-3（runtime 接入完整 streamAICard） |
-| 🖼️ **媒体上传** | 图片/视频/音频/文件上传 + 自动发送 | ✅ PR-3（视频抽封面、音频抽时长全跑通） |
-| 🎬 **视频/音频/文件 marker** | `[DINGTALK_VIDEO]` 等标记扫描 + 上传 + 独立消息 | ✅ PR-3 |
-| 📄 **钉钉文档** | 创建、追加、搜索、列举 | 🟡 占位 |
-| 🔔 **DING 消息** | 强提醒推送 | 🟡 占位 |
-| ✅ **待办任务** | 个人/群待办 CRUD | 🟡 占位 |
-| 📊 **AI 表格** | 表格与行数据读写 | 🟡 占位 |
-| 📅 **日历日程** | 日程管理、参会人、忙闲 | 🟡 占位 |
-| 📝 **日志** | 日报/周报提交与查询 | 🟡 占位 |
+| 💬 **消息收发** | 私聊/群聊接收 + 自动回复，文本/Markdown，@成员 | ✅ |
+| 🌊 **AI Card 流式** | 打字机效果，AI Card 中实时流式显示推理与回复 | ✅ |
+| 🖼️ **媒体上传** | 图片/视频/音频/文件上传 + 自动发送 | ✅ |
+| 🎬 **视频/音频/文件 marker** | `[DINGTALK_VIDEO]` 等标记扫描 + 上传 + 独立消息 | ✅ |
 
 并且提供 **完整 Channel Bridge**：
 
@@ -236,9 +230,9 @@ export DINGTALK_CLIENT_SECRET=...
 - [x] W7：**多账号 React 自定义组件（AccountsEditor / BindingsEditor / GroupsEditor）**（PR-6a）
 - [x] W8：**完整 locale + DSH locale 插件的多语言注册**（PR-6b）
 - [x] W9：**Typert Remote service + manifest 契约验证 + lint 脚本**（PR-6c）
-- [ ] W10：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
-- [ ] W11-W12：稳定性、断线重连
-- [ ] W13：发布与生态接入
+- [x] W10：删除 6 个不适用占位 tool（PR-7）
+- [ ] W11：稳定性、断线重连
+- [ ] W12：发布与生态接入
 
 ---
 

@@ -1,9 +1,12 @@
 /**
  * Tools — 把钉钉能力封装成 DSH 可调用的 tool
  *
+ * 目前 3 个工具：
+ *   - dingtalk_send:       向钉钉会话发送文本/Markdown/图片消息（AI Card 优先）
+ *   - dingtalk_send_media: 向钉钉会话发送本地媒体文件（图片/视频/音频/文件）
+ *   - dingtalk_process_markers: 发送含 [DINGTALK_VIDEO|AUDIO|FILE] 标记的文本
+ *
  * 命名约定：所有 tool 以 `dingtalk_` 为前缀，便于模型识别和工具分类。
- * 首版交付 7 个 tool 的占位定义；后续按需填充业务逻辑（fork 自上游
- * services/messaging、docs、calendar、task、sheet、log）。
  *
  * DSH ctx.tools.register 的 ToolDefinition 形态（参考 @deepseek-ai/dsh-tools）：
  *   {
@@ -13,7 +16,6 @@
  *     output: { schema: schemasteryShape, render: (...) => ModelContent[] },
  *     timeoutMs?: number,
  *     execute: (args, ctx) => Promise<result>,
- *     finalizeContent?: (...) => ModelContent[],
  *   }
  */
 
@@ -23,12 +25,6 @@ import { createLogger } from '../utils/logger.js'
 import { createSendTool } from './dingtalk_send.js'
 import { createSendMediaTool } from './dingtalk_send_media.js'
 import { createProcessMarkersTool } from './dingtalk_process_markers.js'
-import { createDocTool } from './dingtalk_doc.js'
-import { createSheetTool } from './dingtalk_sheet.js'
-import { createCalendarTool } from './dingtalk_calendar.js'
-import { createTaskTool } from './dingtalk_task.js'
-import { createLogTool } from './dingtalk_log.js'
-import { createDingTool } from './dingtalk_ding.js'
 
 const log = createLogger('dingtalk-tools')
 
@@ -46,12 +42,6 @@ export function registerTools(ctx: Context, config: DingtalkConfig): void {
     createSendTool,
     createSendMediaTool,
     createProcessMarkersTool,
-    createDocTool,
-    createSheetTool,
-    createCalendarTool,
-    createTaskTool,
-    createLogTool,
-    createDingTool,
   ]
 
   for (const factory of factories) {

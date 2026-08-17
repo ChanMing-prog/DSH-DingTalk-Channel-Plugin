@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.9.0] — 2026-08-17 (PR-7: Remove placeholder tools)
+
+### Removed
+- **6 placeholder tool files** — Deleted `dingtalk_doc`, `dingtalk_sheet`,
+  `dingtalk_calendar`, `dingtalk_task`, `dingtalk_log`, `dingtalk_ding`.
+  These were stubs returning `{ ok: false, error: 'not implemented yet' }`
+  and will not be implemented in this plugin's scope.
+- **README capability table** — Removed 6 rows (钉钉文档, DING 消息,
+  待办任务, AI 表格, 日历日程, 日志).
+
+### Changed
+- `src/tools/index.ts`: registers only the 3 real tools
+  (`dingtalk_send`, `dingtalk_send_media`, `dingtalk_process_markers`)
+- `package.json`: 0.8.0 → **0.9.0**
+
 ## [0.8.0] — 2026-08-17 (PR-6c: Typert reflection + Remote service + lint)
 
 ### Added
