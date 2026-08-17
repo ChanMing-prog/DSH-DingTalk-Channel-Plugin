@@ -5,6 +5,89 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-08-17 (PR-4)
+
+### Added
+- **Multi-account / multi-bot architecture**
+  - **`src/apis/accounts.ts`** — multi-account resolution
+    - `listAccountIds(config)` — all enabled accounts
+    - `resolveDefaultAccountId(config)` — explicit / mapped / fallback
+    - `resolveAccountConfig(config, accountId)` — merged account (base + override)
+    - `resolveCredentials(config, accountId)` — credential resolution chain
+      (inline → structured ref → env `DINGTALK_<ACCOUNT>_CLIENT_ID/SECRET` → env `DINGTALK_*`)
+    - `fromSettings(settings)` — DSH settings → DingtalkConfig adapter
+  - **`src/apis/bindings.ts`** — OpenClaw-style bindings index
+    - `buildBindingsIndex(config)` — byAgentId / byAccountId index
+    - `accountIdForAgent(index, agentId)` / `agentIdsForAccount(index, accountId)`
+    - `validateBindings(config)` — flags bindings to non-existent accounts
+  - **`src/apis/mentions.ts`** — replaced stub with full upstream fork
+    - `buildBotMentionTable` — accountId + name + bindings → alias table
+    - `substituteBotMentions` — `@<alias>` → `@<chatbotUserId>`, idempotent,
+      long-alias-first sort, bare alias detection via `detectBareAliases`
+    - `resolveAtAccountIdsToChatbotUserIds` — missing-account reporting
+    - `prepareMultiBotMentions` — high-level entry for `send*` paths
+      (combines explicit atAccountIds + text substitution + atDingtalkIds merging)
+- **Settings schema extensions**
+  - `accounts: Record<accountId, DingtalkAccountConfig>` — multi-bot dictionary
+    (each with enabled / name / chatbotUserId / clientId / clientSecret / policies / groups / routes)
+  - `bindings: Array<{ agentId, match: { channel, accountId } }>` — OpenClaw-compatible shape
+- **Multi-stream bridge**
+  - `runtime/stream.ts` `startDingtalkStreamBridges(ctx, config, defaultCreds)` —
+    iterates `listAccountIds(config)` and starts one independent `DWClient` per
+    enabled account, each with its own BridgeContext (handle/card cache, bindings)
+  - `parseInboundMessage(raw, accountId)` — annotates messages with their source account
+- **Per-account policy merging** (`runtime/policy.ts`)
+  - `mergedPolicies(bctx)` — account-level dmPolicy/groupPolicy/allowFrom/groups override
+    top-level config; clean `dm: pair, group: allowlist` baseline
+- **Per-account session routing** (`runtime/session-routing.ts`)
+  - SessionId prefix includes `accountId` to prevent collision across bots
+  - agentScope resolution order: `accounts[accountId].routes` > `routes` > `bindings` > `'main'`
+
+### Changed
+- `package.json` version: 0.3.0 → **0.4.0**
+- `apis/messaging.ts` re-exports new modules (`accounts`, `bindings`, `mentions`)
+- `runtime/setup.ts` `resolveCredentials` now delegates to `apis/accounts.resolveCredentials`
+  (single source of truth for credential resolution across single/multi-account)
+- `types.ts`:
+  - `DingtalkInboundMessage.accountId` — source account
+  - `SessionRouting.accountId` — routing output field
+  - `BridgeContext.accountId` + `bindingsIndex` — runtime injection
+
+### Preserved from upstream
+- `buildBotMentionTable` alias logic (accountId / name / bindings → aliases)
+- `substituteBotMentions` long-alias-first sort (avoid "dev-agent" being
+  matched as "dev")
+- Idempotency: already-encrypted `@$:LWCP_v1:$xxx` never replaced
+- Bare alias detection via `detectBareAliases` option
+
+### Known Limitations (carried forward)
+- 6 remaining tools (doc/sheet/calendar/task/log/ding) still placeholder
+- typert settings UI stub not yet wired
+- No reconnect/retry beyond dingtalk-stream keepalive
+- `DINGTALK_STRICT_DUPLICATE_LOAD` not ported
+- `clientSecret.source = 'file' | 'exec'` not implemented (only 'env');
+  warn + fall back to env with same `id`
+
+### Security
+- Account-specific env vars: `DINGTALK_<ACCOUNT>_CLIENT_ID/SECRET` —
+  prevents credential leaks across accounts
+- `bindings.validateBindings` flags bindings to non-existent accounts at startup
+
+### Tests
+- **`tests/mentions.test.ts`** (NEW): 35 cases
+  - `buildBotMentionTable`: accountId/name/bindings → aliases, disabled skip, extraAliases
+  - `substituteBotMentions`: `@<alias>` replacement, friendly-name, idempotency,
+    partial-match avoidance, bare alias detection, empty/null safe
+  - `resolveAtAccountIdsToChatbotUserIds`: known/missing/empty
+  - `prepareMultiBotMentions`: end-to-end (atAccountIds + text + atDingtalkIds)
+  - `buildBindingsIndex`: byAgentId/byAccountId, channel filter
+  - `validateBindings`: missing accounts, 'default' accepted
+  - `accountIdForAgent`: known/unknown
+  - `listAccountIds`: default fallback, disabled filter
+  - `resolveDefaultAccountId`: explicit/mapped/fallback
+  - `resolveAccountConfig`: fallback / configured / unconfigured / policy merge
+  - `resolveCredentials`: inline / env / account-specific env / missing-throws
+
 ## [0.3.0] — 2026-08-17 (PR-3)
 
 ### Added

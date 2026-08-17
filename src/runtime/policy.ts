@@ -1,8 +1,7 @@
 /**
- * Message Policy — 群/私聊准入与安全策略
+ * Message Policy — 群/私聊准入与安全策略.
  *
- * 对应上游 connector 的 policy.ts + onboarding.ts 中关于 dmPolicy/groupPolicy/
- * allowFrom/requireMention 的逻辑。
+ * PR-4: 支持 per-account policy 覆盖（accounts.<id>.dmPolicy 等优先于顶层）。
  */
 
 import type { BridgeContext, DingtalkInboundMessage } from '../types.js'
@@ -14,49 +13,65 @@ export type PolicyDecision =
   | { accept: true }
   | { accept: false; reason: string }
 
-export function handleMessagePolicy(bctx: BridgeContext, msg: DingtalkInboundMessage): PolicyDecision {
+/**
+ * 合并顶层 config 与 account 级 override.
+ * 账号级字段优先.
+ */
+function mergedPolicies(bctx: BridgeContext) {
   const cfg = bctx.config
+  const acct = cfg.accounts?.[bctx.accountId]
+  return {
+    dmPolicy: acct?.dmPolicy ?? cfg.dmPolicy,
+    allowFrom: acct?.allowFrom ?? cfg.allowFrom ?? [],
+    groupPolicy: acct?.groupPolicy ?? cfg.groupPolicy,
+    groupAllowFrom: acct?.groupAllowFrom ?? cfg.groupAllowFrom ?? [],
+    requireMention: acct?.requireMention ?? cfg.requireMention ?? true,
+    groups: { ...(cfg.groups ?? {}), ...(acct?.groups ?? {}) },
+  }
+}
+
+export function handleMessagePolicy(bctx: BridgeContext, msg: DingtalkInboundMessage): PolicyDecision {
+  const policies = mergedPolicies(bctx)
   const isGroup = msg.conversationType === '2'
 
   // 0. enabled check
-  if (!cfg.enabled) {
+  if (!bctx.config.enabled) {
     return { accept: false, reason: 'plugin disabled' }
   }
 
-  // 1. 全局白名单（同时适用于群和私聊）
-  if (cfg.allowFrom && cfg.allowFrom.length > 0) {
+  // 1. 全局白名单（合并后）
+  if (policies.allowFrom.length > 0) {
     const sender = msg.senderStaffId ?? msg.senderId
-    if (sender && !cfg.allowFrom.includes(sender)) {
+    if (sender && !policies.allowFrom.includes(sender)) {
       return { accept: false, reason: 'sender not in allowFrom' }
     }
   }
 
   if (isGroup) {
-    return groupPolicy(bctx, msg)
+    return groupPolicy(bctx, policies, msg)
   }
-  return dmPolicy(bctx, msg)
+  return dmPolicy(bctx, policies, msg)
 }
 
-function groupPolicy(bctx: BridgeContext, msg: DingtalkInboundMessage): PolicyDecision {
-  const cfg = bctx.config
-  const groupCfg = cfg.groups?.[msg.conversationId]
+function groupPolicy(
+  _bctx: BridgeContext,
+  policies: ReturnType<typeof mergedPolicies>,
+  msg: DingtalkInboundMessage,
+): PolicyDecision {
+  const groupCfg = policies.groups?.[msg.conversationId]
 
-  // 群级 enabled
   if (groupCfg?.enabled === false) {
     return { accept: false, reason: 'group disabled' }
   }
 
-  // 群级 policy
-  const policy = groupCfg ? cfg.groupPolicy : cfg.groupPolicy
+  const policy = policies.groupPolicy
   if (policy === 'disabled') {
     return { accept: false, reason: 'groupPolicy=disabled' }
   }
 
-  // 群级 allowFrom
-  const groupAllowFrom = groupCfg?.allowFrom ?? cfg.groupAllowFrom ?? []
+  const groupAllowFrom = groupCfg?.allowFrom ?? policies.groupAllowFrom ?? []
   if (policy === 'allowlist') {
     if (groupAllowFrom.length === 0) {
-      // allowlist 模式但列表为空 → 拒绝（安全默认）
       return { accept: false, reason: 'group allowlist is empty' }
     }
     const sender = msg.senderStaffId ?? msg.senderId
@@ -65,8 +80,7 @@ function groupPolicy(bctx: BridgeContext, msg: DingtalkInboundMessage): PolicyDe
     }
   }
 
-  // requireMention
-  const requireMention = groupCfg?.requireMention ?? cfg.requireMention ?? true
+  const requireMention = groupCfg?.requireMention ?? policies.requireMention ?? true
   if (requireMention && !msg.isInAtList) {
     return { accept: false, reason: 'message did not @ bot' }
   }
@@ -74,9 +88,12 @@ function groupPolicy(bctx: BridgeContext, msg: DingtalkInboundMessage): PolicyDe
   return { accept: true }
 }
 
-function dmPolicy(bctx: BridgeContext, msg: DingtalkInboundMessage): PolicyDecision {
-  const cfg = bctx.config
-  const policy = cfg.dmPolicy ?? 'pairing'
+function dmPolicy(
+  bctx: BridgeContext,
+  policies: ReturnType<typeof mergedPolicies>,
+  msg: DingtalkInboundMessage,
+): PolicyDecision {
+  const policy = policies.dmPolicy ?? 'pairing'
   const sender = msg.senderStaffId ?? msg.senderId ?? '<unknown>'
 
   if (policy === 'open') {
@@ -84,7 +101,7 @@ function dmPolicy(bctx: BridgeContext, msg: DingtalkInboundMessage): PolicyDecis
   }
 
   if (policy === 'allowlist') {
-    const allow = cfg.allowFrom ?? []
+    const allow = policies.allowFrom ?? []
     if (allow.length === 0) {
       return { accept: false, reason: 'dm allowlist is empty' }
     }
@@ -94,17 +111,17 @@ function dmPolicy(bctx: BridgeContext, msg: DingtalkInboundMessage): PolicyDecis
     return { accept: true }
   }
 
-  // policy === 'pairing'（默认）
+  // pairing（默认）
   if (bctx.pairedStaffIds.has(sender)) {
     return { accept: true }
   }
-  // 第一次收到时静默丢弃，让 onboarding 流程发出配对码
   void emitPairingCode(bctx, sender)
   return { accept: false, reason: 'pairing required' }
 }
 
 async function emitPairingCode(bctx: BridgeContext, sender: string): Promise<void> {
-  // 简化：发送一次性提示消息。完整 pairing 应该用 ctx.credentials 风格的
-  // 配对码，本首版只打日志。
-  log.info(`[pairing] new dm sender ${sender}; in production, send one-time pairing code via dingtalk message API`)
+  log.info(
+    `[pairing] new dm sender ${sender} on accountId=${bctx.accountId}; ` +
+      `in production, send one-time pairing code via dingtalk message API`,
+  )
 }

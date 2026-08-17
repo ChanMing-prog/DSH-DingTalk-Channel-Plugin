@@ -56,6 +56,8 @@ export interface DingtalkInboundMessage {
   raw: unknown
   /** 接收时间 */
   receivedAt: number
+  /** PR-4: 该消息归属的账号（默认 'default'）。stream 启动时按 accountId 决定归属 */
+  accountId?: string
 }
 
 // =============================================================================
@@ -63,12 +65,14 @@ export interface DingtalkInboundMessage {
 // =============================================================================
 
 export interface SessionRouting {
-  /** 钉钉 conversationId → DSH SessionId 的稳定映射 */
+  /** 钉钉 conversationId → DSH SessionId 的稳定映射（含 accountId 前缀）*/
   sessionId: string
   /** 该会话应该使用的 agent scope（决定用哪个 preset）*/
   agentScope: string
   /** 'group' = 群内所有人共享一个 session；'group_sender' = 群内按发送者拆 session */
   sessionScope: 'group' | 'group_sender'
+  /** 该会话归属的钉钉账号（PR-4 多账号）*/
+  accountId: string
 }
 
 // =============================================================================
@@ -119,6 +123,10 @@ export interface BridgeContext {
   ctx: import('cordis').Context
   config: DingtalkConfig
   credentials: ResolvedDingtalkCredentials
+  /** 当前 accountId（多账号场景下，每个 account 一个独立 bridge 实例）*/
+  accountId: string
+  /** bindings 索引（PR-4 多机器人）*/
+  bindingsIndex?: import('./apis/bindings.js').BindingsIndex
   /** 同一 conversationId → AgentHandle 的缓存（按 sessionScope 区分）*/
   handleCache: Map<string, import('@deepseek-ai/dsh-agent').AgentHandle>
   /** 同一 conversationId → 当前活跃 AI Card 实例的缓存 */

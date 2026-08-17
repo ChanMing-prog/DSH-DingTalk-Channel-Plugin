@@ -5,13 +5,17 @@
  *   - 私聊：1 conversationId = 1 SessionId
  *   - 群聊：按 groupSessionScope 决定：
  *       'group'        → 全群共享一个 SessionId
- *       'group_sender' → 每个 senderStaffId 一个 SessionId（按群+人划分）
+ *       'group_sender' → 每个 senderStaffId 一个 SessionId
  *
- * 配置覆盖：
- *   - config.routes 显式指定 conversationId → agentScope
- *   - 默认 agentScope = 'main'
+ * 配置覆盖（优先级从高到低）：
+ *   1. accounts[accountId].routes（账号级覆盖）
+ *   2. 顶层 routes（全局）
+ *   3. bindings[agentId].match.accountId（多机器人绑定）
+ *   4. 默认 'main'
  *
- * SessionId 命名空间：用 `dingtalk:` 前缀避免和 CLI / Web / 其他来源冲突
+ * 多账号：把 accountId 拼进 sessionId 命名空间，避免不同账号的群/私聊撞 session。
+ *
+ * SessionId 命名空间：`dingtalk:<accountId>:<scope>:<conversationId>[:s:<sender>]`
  */
 
 import type { Context } from 'cordis'
@@ -26,35 +30,90 @@ const log = createLogger('dingtalk-routing')
 
 const SESSION_PREFIX = 'dingtalk:'
 
+/**
+ * PR-4 多账号：把 accountId 拼进 sessionId，避免不同账号的 conversationId 撞 session。
+ */
+function buildSessionId(args: {
+  accountId: string
+  isGroup: boolean
+  conversationId: string
+  scope: 'group' | 'group_sender'
+  sender?: string
+}): string {
+  const kind = args.isGroup ? 'g' : 'd'
+  const base = `${SESSION_PREFIX}${args.accountId}:${kind}:${args.conversationId}`
+  if (args.isGroup && args.scope === 'group_sender' && args.sender) {
+    return `${base}:s:${args.sender}`
+  }
+  return base
+}
+
+/**
+ * 决定 agent scope. 优先级（高 → 低）：
+ *   1. accounts[accountId].routes 中匹配 conversationId 的项
+ *   2. 顶层 routes 中匹配 conversationId 的项
+ *   3. bindings 反查：accountId 对应的 agentId 列表里的第一个
+ *   4. 'main' 兜底
+ */
+function resolveAgentScope(
+  bctx: BridgeContext,
+  accountId: string,
+  conversationId: string,
+): string {
+  const config = bctx.config
+  const acct = config.accounts?.[accountId]
+
+  // 1. 账号级 routes
+  const acctRoute = acct?.routes?.find((r) => r.conversationId === conversationId)
+  if (acctRoute) return acctRoute.agentScope ?? 'main'
+
+  // 2. 顶层 routes
+  const route = config.routes?.find((r) => r.conversationId === conversationId)
+  if (route) return route.agentScope ?? 'main'
+
+  // 3. bindings 反查
+  const agentIds = bctx.bindingsIndex?.byAccountId.get(accountId) ?? []
+  if (agentIds.length > 0) return agentIds[0]
+
+  // 4. 兜底
+  return 'main'
+}
+
 export function routeSession(bctx: BridgeContext, msg: DingtalkInboundMessage): SessionRouting {
   const config = bctx.config
+  const accountId = msg.accountId ?? 'default'
   const conversationId = msg.conversationId
   const isGroup = msg.conversationType === '2'
 
-  // 1. 找到这个 conversationId 的群组配置
-  const groupCfg = isGroup ? config.groups?.[conversationId] : undefined
-  const sessionScope = groupCfg?.groupSessionScope ?? (isGroup ? 'group' : 'group')
+  // 0. 取账号级 groupCfg（PR-4：账号覆盖优先）
+  const acct = config.accounts?.[accountId]
+  const globalGroupCfg = isGroup ? config.groups?.[conversationId] : undefined
+  const acctGroupCfg = isGroup ? acct?.groups?.[conversationId] : undefined
+  const groupCfg = acctGroupCfg ?? globalGroupCfg
 
-  // 2. 计算 sessionId
-  let sessionId: string
-  if (isGroup && sessionScope === 'group_sender') {
-    const sender = msg.senderStaffId ?? msg.senderId ?? 'unknown'
-    sessionId = `${SESSION_PREFIX}g:${conversationId}:s:${sender}`
-  } else {
-    sessionId = `${SESSION_PREFIX}${isGroup ? 'g' : 'd'}:${conversationId}`
-  }
+  // 1. 计算 sessionScope
+  const sessionScope = (groupCfg?.groupSessionScope ?? (isGroup ? 'group' : 'group')) as
+    | 'group'
+    | 'group_sender'
 
-  // 3. agent scope（routes 优先）
-  let agentScope = 'main'
-  const route = config.routes?.find((r) => r.conversationId === conversationId)
-  if (route) {
-    agentScope = route.agentScope ?? 'main'
-  }
+  // 2. 计算 sessionId（含 accountId）
+  const sender = msg.senderStaffId ?? msg.senderId ?? 'unknown'
+  const sessionId = buildSessionId({
+    accountId,
+    isGroup,
+    conversationId,
+    scope: sessionScope,
+    sender: sessionScope === 'group_sender' ? sender : undefined,
+  })
+
+  // 3. 决定 agent scope
+  const agentScope = resolveAgentScope(bctx, accountId, conversationId)
 
   return {
     sessionId,
     agentScope,
-    sessionScope: sessionScope as 'group' | 'group_sender',
+    sessionScope,
+    accountId,
   }
 }
 
@@ -64,13 +123,6 @@ export function routeSession(bctx: BridgeContext, msg: DingtalkInboundMessage): 
 
 /**
  * 通过 ctx.agents.create 或 resume 拿到 AgentHandle。
- *
- * DSH ctx.agents API（参考 @deepseek-ai/dsh-agent + dsh-agent-loop）：
- *   - create({ sessionId, meta?, setup? })
- *   - resume({ resumeSessionId, setup? })
- *
- * 第一次进入：create（sessionPersistence 加载不到历史）
- * 后续进入：resume（sessionPersistence 自动加载历史）
  *
  * 简化策略：始终尝试 resume；如果失败（无持久化记录），fallback 到 create。
  */
@@ -92,11 +144,9 @@ export async function createOrResumeAgentHandle(
     )
   }
 
-  // 0. 已有现成 handle（同一进程内）
   const existing = agents.findBySessionId?.(routing.sessionId)
   if (existing) return existing
 
-  // 1. 优先尝试 resume（依赖 sessionPersistence）
   try {
     const handle = await agents.resume({
       resumeSessionId: routing.sessionId,
@@ -108,7 +158,6 @@ export async function createOrResumeAgentHandle(
     log.debug('resume failed, trying create', err)
   }
 
-  // 2. fallback: create
   const handle = await agents.create({
     sessionId: routing.sessionId,
     meta: { cwd: process.cwd() },
@@ -121,10 +170,7 @@ export async function createOrResumeAgentHandle(
 /**
  * 给特定 agent scope 安装钉钉 channel-scope 工具和 persona。
  *
- * DSH agent preset 模式：setup() 在 agent 创建/恢复时被调用，挂在 agent 自己的
- * scope 上。本函数做的事：
- *   1. 给该 agent 注册钉钉相关 tool（如果 preset 没有）
- *   2. 注入 system prompt 片段（@机器人提示等）
+ * PR-4：per-account systemPrompt 优先于顶层 systemPrompt
  */
 function installChannelScopedTools(
   agentCtx: Context,
@@ -134,8 +180,7 @@ function installChannelScopedTools(
   const tools = agentCtx['tools'] as { register?: (def: unknown) => () => void } | undefined
   if (tools?.register) {
     // 复用 tools/index 里的定义
-    // 这里只安装 channel 专用 tool（dingtalk_reply_now），其他通用 tool
-    // （dingtalk_send 等）由 preset 提供
+    // 这里只安装 channel 专用 tool（dingtalk_reply_now），其他通用 tool 由 preset 提供
   }
 
   const systemPrompt = agentCtx['systemPrompt'] as { register?: (def: unknown) => () => void } | undefined
@@ -152,10 +197,14 @@ function buildChannelSystemPrompt(bctx: BridgeContext, routing: SessionRouting):
   parts.push(
     `你正在通过钉钉 channel 与用户对话。`,
     `当前会话 ID：${routing.sessionId}`,
+    `账号：${routing.accountId}`,
     `会话范围：${routing.sessionScope}`,
   )
-  if (bctx.config.systemPrompt) {
-    parts.push('---', bctx.config.systemPrompt)
+  // PR-4: 账号级 systemPrompt 优先于顶层
+  const accountPrompt = bctx.config.accounts?.[routing.accountId]
+  const prompt = (accountPrompt as { systemPrompt?: string } | undefined)?.systemPrompt ?? bctx.config.systemPrompt
+  if (prompt) {
+    parts.push('---', prompt)
   }
   return parts.join('\n')
 }

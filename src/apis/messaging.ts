@@ -345,6 +345,31 @@ export {
 } from './media-markers.js'
 export { getAccessToken, getOapiAccessToken, clearTokenCache } from './tokens.js'
 export {
+  listAccountIds,
+  resolveDefaultAccountId,
+  resolveAccountConfig,
+  resolveCredentials,
+  fromSettings,
+  type ResolvedAccount,
+  type SelectionSource,
+} from './accounts.js'
+export {
+  buildBindingsIndex,
+  validateBindings,
+  accountIdForAgent,
+  agentIdsForAccount,
+  type BindingsIndex,
+  type DingtalkBinding,
+} from './bindings.js'
+export {
+  buildBotMentionTable,
+  substituteBotMentions,
+  resolveAtAccountIdsToChatbotUserIds,
+  prepareMultiBotMentions,
+  type BotMentionEntry,
+  type BuildMentionTableOptions,
+} from './mentions.js'
+export {
   DINGTALK_API,
   DINGTALK_OAPI,
   AI_CARD_TEMPLATE_ID,

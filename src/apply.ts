@@ -28,7 +28,7 @@ import { DingtalkConfigSchema, type DingtalkConfig } from '../settings-schema.js
 import { createLogger } from './utils/logger.js'
 import { resolveCredentials, registerCredentials, registerSettings } from './runtime/setup.js'
 import { registerTools } from './tools/index.js'
-import { startDingtalkStreamBridge } from './runtime/stream.js'
+import { startDingtalkStreamBridges } from './runtime/stream.js'
 import { registerJobsController } from './runtime/jobs-controller.js'
 
 export const CHANNEL_ID = 'dingtalk-connector' as const
@@ -67,16 +67,17 @@ export default function apply(ctx: Context, rawConfig: unknown = {}): void {
   // 4. jobs controller：stream 长连接作为 long-running producer 注册到 ctx.jobs
   registerJobsController(ctx, config.jobsControllerName)
 
-  // 5. stream bridge：启动订阅
+  // 5. stream bridges（PR-4：每个 enabled account 一个独立实例）
   let stopBridge: (() => void) | null = null
   try {
     const creds = resolveCredentials(config)
-    stopBridge = startDingtalkStreamBridge(ctx, config, creds)
-    log.info('dingtalk stream bridge started', {
-      accountId: config.defaultAccount,
+    stopBridge = startDingtalkStreamBridges(ctx, config, creds)
+    log.info('dingtalk stream bridges started', {
+      accounts: Object.keys(config.accounts ?? {}).filter((id) => config.accounts?.[id]?.enabled !== false).length || 1,
+      defaultAccount: config.defaultAccount,
     })
   } catch (err) {
-    log.error('failed to start dingtalk stream bridge', err)
+    log.error('failed to start dingtalk stream bridges', err)
   }
 
   // 6. fiber 卸载时清理

@@ -3,17 +3,17 @@
  *
  * 把 dingtalk-stream 长连接接到的入站消息翻译为 DSH agent inbox 调用。
  *
- * 流程：
+ * PR-4: 多账号支持 — startDingtalkStreamBridges() 为每个 enabled account
+ * 启动独立 stream 实例，每个实例有独立的 BridgeContext（独立缓存、独立 bindings）。
+ *
+ * 流程（每个账号）：
  *   1. dingtalk-stream 收到 callback 数据
- *   2. 解析成 DingtalkInboundMessage
- *   3. 按 conversationId + sessionScope 映射成稳定 SessionId
- *   4. 查 / 创建 AgentHandle（ctx.agents.create 或 resume）
+ *   2. 解析成 DingtalkInboundMessage（注入 accountId）
+ *   3. 按 conversationId + sessionScope + accountId 映射成稳定 SessionId
+ *   4. 查 / 创建 AgentHandle
  *   5. 把消息包装成 DingtalkAgentMessage，通过 handle.followup 灌入 inbox
  *   6. 订阅 handle.session 的 assistant/chunk 事件，转发给 AI Card 流式
  *   7. 等 idle 后解绑订阅
- *
- * 这个文件是上游 connector 的 core/provider.ts + services/card-bridge.ts 的
- * "DSH 重写版"：保留协议层、把 OpenClaw 依赖换成 cordis。
  */
 
 import type { Context } from 'cordis'
@@ -26,7 +26,11 @@ import {
   type AiCardInstance,
 } from '../types.js'
 import { createLogger } from '../utils/logger.js'
-import { resolveCredentials } from './setup.js'
+import {
+  resolveCredentials as resolveAccountCredentials,
+  listAccountIds,
+} from '../apis/accounts.js'
+import { buildBindingsIndex } from '../apis/bindings.js'
 import { routeSession } from './session-routing.js'
 import { createOrResumeAgentHandle } from './session-routing.js'
 import { createAiCard, appendAiCardChunk, completeAiCard, failAiCard } from './ai-card.js'
@@ -35,13 +39,13 @@ import { handleMessagePolicy } from './policy.js'
 const log = createLogger('dingtalk-stream')
 
 /**
- * 启动 stream bridge。
- * 返回 dispose 函数，调用后停止订阅。
+ * PR-4: 启动 stream bridges（每个 enabled account 一个独立实例）。
+ * 返回 dispose 函数，调用后停止所有订阅。
  */
-export function startDingtalkStreamBridge(
+export function startDingtalkStreamBridges(
   ctx: Context,
   rawConfig: unknown,
-  credentials: { clientId: string; clientSecret: string },
+  defaultCredentials: { clientId: string; clientSecret: string },
 ): () => void {
   const parse = DingtalkConfigSchema.safeParse(rawConfig)
   if (!parse.success) {
@@ -52,18 +56,73 @@ export function startDingtalkStreamBridge(
   // 暴露 ctx 给 setup 模块（resolveCredentials 内部用）
   ;(globalThis as { __dsh_ctx?: Context }).__dsh_ctx = ctx
 
+  // 构建 bindings 索引（共享给所有账号）
+  const bindingsIndex = buildBindingsIndex(config)
+  const accountIds = listAccountIds(config)
+
+  const disposers: Array<() => void> = []
+
+  for (const accountId of accountIds) {
+    try {
+      const credentials =
+        accountId === 'default'
+          ? defaultCredentials
+          : resolveAccountCredentials(config, accountId)
+      const stop = startStreamForAccount(ctx, config, credentials, accountId, bindingsIndex)
+      disposers.push(stop)
+    } catch (err) {
+      log.error(`failed to start stream for accountId=${accountId}`, err)
+    }
+  }
+
+  return () => {
+    for (const stop of disposers) {
+      try {
+        stop()
+      } catch (err) {
+        log.error('error stopping stream', err)
+      }
+    }
+  }
+}
+
+/**
+ * 兼容旧签名：单账号场景。PR-2 时期的入口，保留以防外部代码直接调用。
+ */
+export function startDingtalkStreamBridge(
+  ctx: Context,
+  rawConfig: unknown,
+  credentials: { clientId: string; clientSecret: string },
+): () => void {
+  return startDingtalkStreamBridges(ctx, rawConfig, credentials)
+}
+
+interface StreamClient {
+  registerCallbackListener: (path: string, listener: (res: unknown) => void) => void
+  start: () => Promise<void>
+  close: () => void
+}
+
+function startStreamForAccount(
+  ctx: Context,
+  config: DingtalkConfig,
+  credentials: { clientId: string; clientSecret: string },
+  accountId: string,
+  bindingsIndex: ReturnType<typeof buildBindingsIndex>,
+): () => void {
   const bridgeCtx: BridgeContext = {
     ctx,
     config,
     credentials: { ...credentials },
+    accountId,
+    bindingsIndex,
     handleCache: new Map(),
     cardCache: new Map(),
     cardRealCache: new Map(),
     pairedStaffIds: new Set(),
   }
 
-  // 动态 import dingtalk-stream 以避免启动期硬依赖
-  let client: { registerCallbackListener: (l: unknown) => void; start: () => Promise<void>; close: () => void } | null = null
+  let client: StreamClient | null = null
 
   void (async () => {
     try {
@@ -74,7 +133,7 @@ export function startDingtalkStreamBridge(
       const DWClient = stream.DWClient || stream.default?.DWClient
 
       if (!DWClient) {
-        log.error('dingtalk-stream SDK missing DWClient; check installation')
+        log.error(`[${accountId}] dingtalk-stream SDK missing DWClient; check installation`)
         return
       }
 
@@ -83,38 +142,32 @@ export function startDingtalkStreamBridge(
         appSecret: credentials.clientSecret,
       })
 
-      const chatBotHandler = ChatBotHandler
-        ? new ChatBotHandler({ dwClient })
-        : null
-      if (chatBotHandler) {
-        // 注册"消息类"回调
+      if (ChatBotHandler) {
+        new ChatBotHandler({ dwClient })
         dwClient.registerCallbackListener(
           '/v1.0/im/bot/messages/get',
           (res: unknown) => {
             try {
-              const msg = parseInboundMessage(res)
+              const msg = parseInboundMessage(res, accountId)
               void processInboundMessage(bridgeCtx, msg)
             } catch (err) {
-              log.error('failed to handle chat-bot message', err)
+              log.error(`[${accountId}] failed to handle chat-bot message`, err)
             }
           },
         )
-        log.info('registered /v1.0/im/bot/messages/get listener')
       }
 
       if (CardReplier) {
-        // 注册 AI Card 回调
         const cardReplier = new CardReplier({ dwClient })
         dwClient.registerCallbackListener('/v1.0/card/instances/create', (res: unknown) => cardReplier.cardInstanceCreated(res))
         dwClient.registerCallbackListener('/v1.0/card/instances/update', (res: unknown) => cardReplier.cardInstanceUpdated(res))
-        log.info('registered AI Card listeners')
       }
 
       await dwClient.start()
       client = dwClient
-      log.info('dingtalk-stream client started', { clientId: credentials.clientId })
+      log.info(`[${accountId}] dingtalk-stream client started`, { clientId: credentials.clientId })
     } catch (err) {
-      log.error('failed to start dingtalk-stream client', err)
+      log.error(`[${accountId}] failed to start dingtalk-stream client`, err)
     }
   })()
 
@@ -122,7 +175,7 @@ export function startDingtalkStreamBridge(
     try {
       client?.close?.()
     } catch (err) {
-      log.error('error closing dingtalk-stream client', err)
+      log.error(`[${accountId}] error closing dingtalk-stream client`, err)
     }
   }
 }
@@ -131,7 +184,7 @@ export function startDingtalkStreamBridge(
 // 入站消息解析（钉钉 → DSH 内部）
 // =============================================================================
 
-function parseInboundMessage(raw: unknown): DingtalkInboundMessage {
+function parseInboundMessage(raw: unknown, accountId: string): DingtalkInboundMessage {
   const r = raw as Record<string, unknown>
   const header = r['headers'] as Record<string, unknown> | undefined
   const data = (r['data'] ?? r) as Record<string, unknown>
@@ -185,6 +238,7 @@ function parseInboundMessage(raw: unknown): DingtalkInboundMessage {
     videoUrl: data['videoUrl'] as string | undefined,
     raw,
     receivedAt: Date.now(),
+    accountId,
   }
 }
 

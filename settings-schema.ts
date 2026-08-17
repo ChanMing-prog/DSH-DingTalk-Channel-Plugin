@@ -68,6 +68,82 @@ export const DingtalkConfigSchema = z.object({
     )
     .default([]),
 
+  // —— 多账号 / 多机器人 / bindings（PR-4）——
+  /**
+   * 多账号字典：key 是 accountId（默认 'default'）。
+   * 不填则视作单账号模式，使用顶层的 clientId/clientSecret。
+   */
+  accounts: z
+    .record(
+      z.string(),
+      z.object({
+        enabled: z.boolean().default(true),
+        /** 友好名（agent 写 "@开发机器人" 时触发 mention）*/
+        name: z.string().optional(),
+        /** 钉钉侧的加密机器人 ID（`$:LWCP_v1:$xxx`）。订阅 stream 回调后会拿到。*/
+        chatbotUserId: z.string().optional(),
+        /** 此账号专属凭证（不填则继承顶层 clientId/clientSecret）*/
+        clientId: z.union([z.string(), z.number()]).optional(),
+        clientSecret: z
+          .union([
+            z.string(),
+            z.object({
+              source: z.enum(['env', 'file', 'exec']),
+              provider: z.string().min(1),
+              id: z.string().min(1),
+            }),
+          ])
+          .optional(),
+        /** 此账号的私聊/群策略（不填继承顶层）*/
+        dmPolicy: z.enum(['open', 'pairing', 'allowlist']).optional(),
+        allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
+        groupPolicy: z.enum(['open', 'allowlist', 'disabled']).optional(),
+        groupAllowFrom: z.array(z.union([z.string(), z.number()])).optional(),
+        requireMention: z.boolean().optional(),
+        groups: z
+          .record(
+            z.string(),
+            z.object({
+              requireMention: z.boolean().optional(),
+              enabled: z.boolean().optional(),
+              allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
+              systemPrompt: z.string().optional(),
+              groupSessionScope: z.enum(['group', 'group_sender']).optional(),
+            }),
+          )
+          .optional(),
+        /** 此账号的专属 conversationId → agent scope 路由表 */
+        routes: z
+          .array(
+            z.object({
+              conversationId: z.string(),
+              agentScope: z.string().default('main'),
+            }),
+          )
+          .optional(),
+      }),
+    )
+    .default({}),
+
+  /**
+   * bindings：把 OpenClaw 风格的 agent bindings 形态搬过来。
+   * 每条形如 { agentId, match: { channel: 'dingtalk-connector', accountId: 'xxx' } }
+   *
+   * 用法 1：ap-is/bindings.ts 用它反查 "agentId → accountId → chatbotUserId"
+   * 用法 2：runtime/session-routing.ts 用它把 "accountId" 映射到 "agentScope"
+   */
+  bindings: z
+    .array(
+      z.object({
+        agentId: z.string(),
+        match: z.object({
+          channel: z.literal('dingtalk-connector'),
+          accountId: z.string(),
+        }),
+      }),
+    )
+    .default([]),
+
   // —— bridge 专属 ——
   inboxWakeup: z.enum(['followup', 'steer']).default('followup'),
   streamTimeoutMs: z.number().int().positive().default(60000),
@@ -172,6 +248,87 @@ export const ChannelDingtalkSettingsSchema = {
       },
     },
 
+    // —— 多账号 / 多机器人 / bindings（PR-4）——
+    accounts: {
+      type: 'object',
+      default: {},
+      additionalProperties: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          enabled: { type: 'boolean', default: true },
+          name: { type: 'string' },
+          chatbotUserId: { type: 'string' },
+          clientId: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+          clientSecret: {
+            role: 'secret',
+            anyOf: [
+              { type: 'string' },
+              {
+                type: 'object',
+                properties: {
+                  source: { type: 'string', enum: ['env', 'file', 'exec'] },
+                  provider: { type: 'string', minLength: 1 },
+                  id: { type: 'string', minLength: 1 },
+                },
+                required: ['source', 'provider', 'id'],
+                additionalProperties: false,
+              },
+            ],
+          },
+          dmPolicy: { type: 'string', enum: ['open', 'pairing', 'allowlist'] },
+          allowFrom: {
+            type: 'array',
+            items: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+          },
+          groupPolicy: { type: 'string', enum: ['open', 'allowlist', 'disabled'] },
+          groupAllowFrom: {
+            type: 'array',
+            items: { anyOf: [{ type: 'string' }, { type: 'number' }] },
+          },
+          requireMention: { type: 'boolean' },
+          groups: {
+            type: 'object',
+            additionalProperties: { type: 'object' },
+          },
+          routes: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                conversationId: { type: 'string' },
+                agentScope: { type: 'string', default: 'main' },
+              },
+              required: ['conversationId'],
+              additionalProperties: false,
+            },
+          },
+        },
+      },
+    },
+
+    bindings: {
+      type: 'array',
+      default: [],
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          agentId: { type: 'string' },
+          match: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              channel: { type: 'string', enum: ['dingtalk-connector'] },
+              accountId: { type: 'string' },
+            },
+            required: ['channel', 'accountId'],
+          },
+        },
+        required: ['agentId', 'match'],
+      },
+    },
+
     // bridge 专属
     inboxWakeup: { type: 'string', enum: ['followup', 'steer'], default: 'followup' },
     streamTimeoutMs: { type: 'integer', exclusiveMinimum: 0, default: 60000 },
@@ -208,6 +365,38 @@ export type ChannelDingtalkSettings = {
   textChunkLimit?: number
   mediaMaxMb?: number
   routes?: Array<{ conversationId: string; agentScope?: string }>
+  /** 多账号字典：accountId → DingtalkAccountConfig */
+  accounts?: Record<
+    string,
+    {
+      enabled?: boolean
+      name?: string
+      chatbotUserId?: string
+      clientId?: string | number
+      clientSecret?: string | { source: 'env' | 'file' | 'exec'; provider: string; id: string }
+      dmPolicy?: 'open' | 'pairing' | 'allowlist'
+      allowFrom?: Array<string | number>
+      groupPolicy?: 'open' | 'allowlist' | 'disabled'
+      groupAllowFrom?: Array<string | number>
+      requireMention?: boolean
+      groups?: Record<
+        string,
+        {
+          requireMention?: boolean
+          enabled?: boolean
+          allowFrom?: Array<string | number>
+          systemPrompt?: string
+          groupSessionScope?: 'group' | 'group_sender'
+        }
+      >
+      routes?: Array<{ conversationId: string; agentScope?: string }>
+    }
+  >
+  /** OpenClaw 风格的 bindings：agentId ↔ (channel, accountId) */
+  bindings?: Array<{
+    agentId: string
+    match: { channel: 'dingtalk-connector'; accountId: string }
+  }>
   inboxWakeup?: 'followup' | 'steer'
   streamTimeoutMs?: number
   jobsControllerName?: string

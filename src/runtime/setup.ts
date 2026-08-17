@@ -12,6 +12,7 @@ import type { Context } from 'cordis'
 import { ChannelDingtalkSettingsSchema, type DingtalkConfig } from '../../settings-schema.js'
 import type { ResolvedDingtalkCredentials } from '../types.js'
 import { createLogger } from '../utils/logger.js'
+import { resolveCredentials as resolveAccounts } from '../apis/accounts.js'
 
 const log = createLogger('dingtalk-setup')
 
@@ -86,39 +87,13 @@ export function registerCredentials(ctx: Context): void {
 }
 
 /**
- * 解析凭证。优先用 ctx.credentials，否则退到 process.env。
+ * 解析凭证（默认账号 'default'）。这是 apply() 的入口；多账号场景下 stream.ts
+ * 会用 apis/accounts.resolveCredentials() 逐个解析。
+ *
+ * 委派给 apis/accounts 的多账号实现（PR-4 统一了入口）。
  */
 export function resolveCredentials(config: DingtalkConfig): ResolvedDingtalkCredentials {
-  // 1. 优先用 entry config 里 inline 的值（少见，仅用于测试）
-  if (typeof config.clientId === 'string' && typeof config.clientSecret === 'string') {
-    return { clientId: config.clientId, clientSecret: config.clientSecret }
-  }
-
-  // 2. 用 ctx.credentials
-  const ctx = (globalThis as { __dsh_ctx?: Context }).__dsh_ctx
-  const credentials = ctx?.['credentials'] as
-    | { resolve?: (ns: string, id: string) => Promise<string | undefined> | string | undefined }
-    | undefined
-  if (credentials?.resolve) {
-    // 同步路径（credentials 通常是同步）
-    const cid = credentials.resolve('channel-dingtalk', 'clientId')
-    const csec = credentials.resolve('channel-dingtalk', 'clientSecret')
-    if (typeof cid === 'string' && typeof csec === 'string') {
-      return { clientId: cid, clientSecret: csec }
-    }
-  }
-
-  // 3. 兜底读 env
-  const cid = process.env.DINGTALK_CLIENT_ID
-  const csec = process.env.DINGTALK_CLIENT_SECRET
-  if (cid && csec) {
-    return { clientId: cid, clientSecret: csec }
-  }
-
-  throw new Error(
-    '[dingtalk-channel] missing credentials: set DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET, ' +
-      'or supply via entry config, or load @deepseek-ai/dsh-credentials',
-  )
+  return resolveAccounts(config, 'default')
 }
 
 /**

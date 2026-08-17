@@ -88,6 +88,8 @@ npm run build
 
 ## 配置
 
+### 单账号场景
+
 DSH 的 settings 配置（`~/.dsh/settings.yaml`）：
 
 ```yaml
@@ -103,6 +105,52 @@ channel-dingtalk:
   inboxWakeup: 'followup'
   streamTimeoutMs: 60000
 ```
+
+### 多账号 / 多 Agent 场景（PR-4）
+
+```yaml
+channel-dingtalk:
+  enabled: true
+  defaultAccount: 'prod-bot'
+
+  accounts:
+    prod-bot:
+      enabled: true
+      name: '生产机器人'
+      chatbotUserId: '$:LWCP_v1:$prodbot123'   # 钉钉侧的加密机器人 ID
+      clientId: ${env:DINGTALK_PROD_BOT_CLIENT_ID}
+      clientSecret: ${env:DINGTALK_PROD_BOT_CLIENT_SECRET}
+      dmPolicy: 'allowlist'
+      groupPolicy: 'allowlist'
+      allowFrom: ['staffA', 'staffB']
+      requireMention: true
+      routes:
+        - conversationId: 'cProdGroup1'
+          agentScope: 'prod-agent'
+
+    dev-bot:
+      enabled: true
+      name: '开发机器人'
+      chatbotUserId: '$:LWCP_v1:$devbot456'
+      clientId: ${env:DINGTALK_DEV_BOT_CLIENT_ID}
+      clientSecret: ${env:DINGTALK_DEV_BOT_CLIENT_SECRET}
+      groups:
+        'cDevGroup1':
+          requireMention: true
+          groupSessionScope: 'group_sender'  # 按发送者拆 session
+
+  bindings:
+    - agentId: 'prod-agent'
+      match:
+        channel: 'dingtalk-connector'
+        accountId: 'prod-bot'
+    - agentId: 'dev-agent'
+      match:
+        channel: 'dingtalk-connector'
+        accountId: 'dev-bot'
+```
+
+每个账号启动独立 stream DWClient，bindings 把 DSH agent scope 与钉钉账号绑定，settings 的 `routes` 进一步按 conversationId 精细化路由。
 
 凭证（只引用环境变量，不存值）：
 
@@ -122,10 +170,12 @@ export DINGTALK_CLIENT_SECRET=...
 - [x] W3：**媒体上传 + 图片后处理 + send_media 工具**（PR-2）
 - [x] W4：**视频/音频/文件完整主动发送流程 + marker processor**（PR-3）
 - [x] W4：**runtime/ai-card.ts 接入完整 apis/streamAICard + apis/finishAICard**（PR-3）
-- [ ] W5：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
-- [ ] W6：typert 设置 UI + 文档
-- [ ] W7-W8：稳定性、断线重连
-- [ ] W9：发布与生态接入
+- [x] W5：**多账号 / 多机器人 / bindings 完整支持**（PR-4）
+- [x] W5：**multi-stream bridge：每个 account 一个独立 DWClient**（PR-4）
+- [ ] W6：把 6 个占位 tool（doc/sheet/calendar/task/log/ding）填充实现
+- [ ] W7：typert 设置 UI + 文档
+- [ ] W8-W9：稳定性、断线重连
+- [ ] W10：发布与生态接入
 
 ---
 
