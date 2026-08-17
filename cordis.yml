@@ -1,0 +1,57 @@
+# DSH DingTalk Channel Plugin — Cordis Composition Row
+#
+# 这是 DSH 装载本插件时使用的 row 形态。
+# 把它复制到你的 host composition（通常是 `~/.dsh/cordis.yml` 或
+# `dsh base.cordis.yml` 的 host 段）即可加载本插件。
+#
+# 注意：本插件的 apply(ctx) 内部会自行注册 settings namespace、tools、
+# credentials、jobs controller，所以不需要在这里再额外声明这些服务。
+# host composition 只需要保证以下 service 已在它之前加载：
+#   - @deepseek-ai/dsh-tools        (ctx.tools)
+#   - @deepseek-ai/dsh-settings     (ctx.settings)
+#   - @deepseek-ai/dsh-credentials  (ctx.credentials, 可选)
+#   - @deepseek-ai/dsh-jobs-local   (ctx.jobs)
+#   - @deepseek-ai/dsh-session      (ctx.sessions)
+#   - @deepseek-ai/dsh-agent-loop   (ctx.agentLoop)
+#   - @deepseek-ai/dsh-session-persistence-jsonl  (持久化)
+#
+# 这些都是 DSH 标准 host composition 已经加载的，详见
+# https://github.com/deepseek-ai/deepseek-harness/blob/main/apps/cli/config/base.cordis.yml
+
+- id: dingtalk-channel
+  name: '@local/dsh-channel-dingtalk'
+  config:
+    enabled: true
+    defaultAccount: 'default'
+    # 凭证通过 ctx.credentials 读取环境变量 DINGTALK_CLIENT_ID / DINGTALK_CLIENT_SECRET，
+    # 不要把值写到这里（配置只引用，不持有，遵循 dsh-credentials 契约）。
+    dmPolicy: 'pairing'                # 私聊：open / pairing / allowlist
+    groupPolicy: 'allowlist'           # 群聊：open / allowlist / disabled
+    requireMention: true               # 群聊必须 @机器人才响应
+    allowFrom: []                      # 私聊/群聊允许的 senderId/staffId 白名单
+    groupAllowFrom: []                 # 群聊额外白名单（覆盖 allowFrom）
+    groups: {}                         # 按 conversationId 配置覆盖默认策略
+    historyLimit: 50                   # 上下文消息条数上限
+    textChunkLimit: 4000               # 单条消息最大字符数
+    mediaMaxMb: 20                     # 媒体上传上限 MB
+    enableMediaUpload: true
+    systemPrompt: ''                   # 注入 agent 的额外 system prompt（可空）
+    # —— bridge 专属 ——
+    inboxWakeup: 'followup'            # 'followup' (新 turn) 或 'steer' (插队)
+    streamTimeoutMs: 60000             # 等待 AI Card 流式结束超时
+    jobsControllerName: 'dingtalk-stream'  # 注册到 ctx.jobs 的 controller 名
+    aiCardReuseMs: 86400000            # AI Card 实例复用窗口（默认 24h）
+
+    # —— 会话路由（按 conversationId 指定 agent scope）——
+    routes: []
+    # 示例：
+    # routes:
+    #   - conversationId: 'cXXXXXXXXXXXXXXXX'
+    #     agentScope: 'main'           # 使用 'standard' preset 起的 agent
+    #   - conversationId: 'cYYYYYYYYYYYYYYYY'
+    #     agentScope: 'coding-only'    # 使用 'code' preset 起的 agent
+
+    # —— 工具集合（与下 toolsOnly 互斥）——
+    # 本插件默认同时启用 7 个 DSH tool（dingtalk_send 等）。
+    # 如果只想用 channel bridge、不要 tool，可以切到 toolsOnly: false。
+    toolsOnly: false
